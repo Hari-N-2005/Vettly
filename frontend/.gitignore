@@ -16,3 +16,5 @@ uploads/
 .cache/
 coverage/
 .nyc_output/
+
+DETAILS.md
