@@ -1,325 +1,64 @@
-# Tender Compliance Validator - Complete Architecture Guide
-
-## 📋 Overview
-
-This is a **complete technical specification** for a full-stack Tender Compliance Validator web application. The app helps legal/procurement teams upload RFP documents and vendor proposals, then automatically validates compliance and detects risks using AI.
-
----
-
-## 📁 FILES IN THIS REPOSITORY
-
-1. **TECH_STACK.md** - Technology choices, infrastructure, and deployment strategy
-2. **MODELS.ts** - Complete TypeScript interfaces and data models (59 models)
-3. **FOLDER_STRUCTURE.md** - Detailed directory layout with descriptions
-4. **PRISMA_SCHEMA.prisma** - Database schema for PostgreSQL
-5. **CONFIG_EXAMPLES.ts** - Example configuration files (tsconfig, vite, jest, etc.)
-6. **IMPLEMENTATION_EXAMPLES.ts** - Sample working code for routes, services, hooks
-7. **frontend.package.json** - Frontend dependencies
-8. **backend.package.json** - Backend dependencies
-
----
-
-## 🏗️ Architecture Layers
-
-### Frontend (React + Vite)
-- **Components** - Reusable UI elements (upload, dashboard, compliance, risks)
-- **Pages** - Router-based views
-- **Hooks** - Custom logic & data fetching (useComplianceData, useRFPManagement)
-- **Services** - API communication (complianceService, rfpService)
-- **Store** - Zustand state management (authStore, uiStore)
-- **Types** - TypeScript interfaces extending MODELS.ts
-
-### Backend (Node.js + Express)
-- **Controllers** - HTTP request handlers
-- **Routes** - API endpoint definitions
-- **Services** - Business logic (complianceService, aiService, riskService)
-- **Middleware** - Auth, validation, error handling
-- **Config** - Database, Redis, environment setup
-- **Jobs** - Bull queue processors for async tasks
-
-### Database (PostgreSQL + Prisma)
-- RFPDocument, Requirement, VendorProposal
-- ComplianceResult, RiskFlag
-- User, AuditLog, ProcessingJob
-
-### External APIs
-- **Claude API** - Requirement extraction, compliance evaluation, risk detection
-- **AWS S3** - File storage (or local filesystem)
-
----
-
-## 🗂️ Quick File Reference
-
-**Start Here:**
-1. Read **TECH_STACK.md** for architecture overview
-2. Review **MODELS.ts** for all data structures
-3. Check **FOLDER_STRUCTURE.md** for directory layout
-4. Use **CONFIG_EXAMPLES.ts** for project setup
-5. Study **IMPLEMENTATION_EXAMPLES.ts** for code patterns
-
-**Development:**
-- Use **frontend.package.json** for frontend dependencies
-- Use **backend.package.json** for backend dependencies
-- Use **PRISMA_SCHEMA.prisma** for database setup
-
----
-
-## 🚀 Tech Stack Summary
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 18 + TypeScript + Vite |
-| State | Zustand + TanStack Query |
-| Forms | React Hook Form + Zod |
-| Styling | Tailwind CSS + Recharts |
-| Backend | Node.js 18+ + Express |
-| Database | PostgreSQL 15+ + Prisma |
-| Cache | Redis + Bull |
-| AI | Claude 3.5 Sonnet |
-| Auth | JWT |
-| Testing | Vitest + Jest |
-
----
-
-## 💾 Data Model Highlights
-
-### 5 Core Entities
-- **RFPDocument** - Requirements document (PDF/DOCX)
-- **Requirement** - Extracted mandatory/optional clauses
-- **VendorProposal** - Vendor response documents
-- **ComplianceResult** - Requirement vs proposal evaluation
-- **RiskFlag** - Detected risks (legal, financial, timeline, technical)
-
-### Key Statuses
-- ComplianceStatus: COMPLIANT, PARTIALLY_COMPLIANT, NON_COMPLIANT, UNCLEAR, NOT_APPLICABLE
-- RiskSeverity: CRITICAL, HIGH, MEDIUM, LOW, INFO
-- RiskCategory: LEGAL, FINANCIAL, TIMELINE, TECHNICAL, VENDOR_CREDIBILITY, OPERATIONAL
-
----
-
-## 🎯 Main Workflows
-
-### 1. RFP Upload & Extract Requirements
-```
-User uploads RFP 
-  → Text extraction (PDFjs/Mammoth)
-  → Claude extracts requirements
-  → Stored with AI confidence scores
-  → User reviews & optionally edits
-```
-
-### 2. Proposal Upload & Validation
-```
-User uploads vendor proposal(s)
-  → Text extraction
-  → For each requirement:
-    - Claude evaluates compliance
-    - Scores against acceptance criteria
-    - Returns evidence from proposal
-  → Risk detection via Claude
-  → Overall compliance score calculated
-```
-
-### 3. Dashboard & Comparison
-```
-Backend aggregates:
-  → All vendor scores
-  → Heatmap: requirement × vendor
-  → Risk distribution
-  → Compliance rankings
-  
-Frontend renders:
-  → Comparison matrix
-  → Visual heatmap
-  → Risk breakdown
-  → Vendor rankings
-```
-
----
-
-## 🏃 Quick Start
-
-### Prerequisites
-```bash
-Node.js 18+, PostgreSQL 15+, Redis 7+, Claude API key
-```
-
-### Setup
-```bash
-# 1. Clone & install
-git clone <repo> vettly && cd vettly
-cd frontend && npm install && cd ../backend && npm install && cd ..
-
-# 2. Configure
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env.local
-# Edit .env files with your DB, Redis, Claude API key
-
-# 3. Start services
-docker-compose up -d  # PostgreSQL + Redis
-
-# 4. Run migrations
-cd backend && npx prisma migrate dev && cd ..
-
-# 5. Start dev servers
-# Terminal 1:
-cd backend && npm run dev
-
-# Terminal 2:
-cd frontend && npm run dev
-
-# 6. Access
-# Frontend: http://localhost:5173
-# Backend: http://localhost:3000/api
-```
-
----
-
-## 🔌 API Endpoints (Quick Reference)
-
-**RFP Management**
-- POST `/api/rfp/upload` - Upload RFP
-- GET `/api/rfp/:id` - Get RFP with requirements
-- DELETE `/api/rfp/:id` - Archive RFP
-
-**Proposals**
-- POST `/api/proposals/upload` - Upload proposal
-- GET `/api/proposals/:id` - Get proposal
-- GET `/api/rfp/:rfpId/proposals` - List proposals
-
-**Compliance**
-- POST `/api/validate/:proposalId` - Start validation
-- GET `/api/compliance/:proposalId` - Get results
-- GET `/api/compliance/rfp/:rfpId/report` - Full report
-
-**Dashboard**
-- GET `/api/dashboard/:rfpId` - Vendor comparison
-
-**Risks**
-- GET `/api/risks/:rfpId` - All risks
-- GET `/api/risks/proposal/:proposalId` - Proposal risks
-
----
-
-## 🧪 Testing
-
-```bash
-# Frontend
-cd frontend && npm run test              # Run tests
-npm run test:ui                          # Interactive mode
-npm run test:coverage                    # Coverage report
-
-# Backend
-cd backend && npm run test               # Run Jest tests
-npm run test:watch                       # Watch mode
-npm run test:coverage                    # Coverage report
-```
-
----
-
-## 🔒 Security Features
-
-✅ JWT authentication + refresh tokens
-✅ CORS protection
-✅ Rate limiting
-✅ Input validation (Zod)
-✅ File upload validation
-✅ SQL injection prevention (Prisma)
-✅ XSS protection (React)
-✅ Audit logging
-
----
-
-## 📚 Recommended Reading Order
-
-1. **README.md** (this file) - Overview
-2. **TECH_STACK.md** - Architecture & decisions
-3. **MODELS.ts** - Data structures
-4. **FOLDER_STRUCTURE.md** - Code organization
-5. **IMPLEMENTATION_EXAMPLES.ts** - Code patterns
-6. **CONFIG_EXAMPLES.ts** - Configuration
-7. **PRISMA_SCHEMA.prisma** - Database
-
----
-
-## 🎓 Development Guide
-
-### Adding a Feature
-1. Update `MODELS.ts` with new types
-2. Update `PRISMA_SCHEMA.prisma` 
-3. Run `prisma migrate dev`
-4. Implement API route in `backend/src/routes/`
-5. Add service logic in `backend/src/services/`
-6. Create frontend service in `frontend/src/services/`
-7. Build React component/hook
-8. Write tests
-9. Update types in `frontend/src/types/`
-
-### Code Organization
-- Backend uses Prisma for ORM
-- Frontend uses TanStack Query for server state
-- Zustand for local UI state
-- Shared types from MODELS.ts
-- Claude API for AI features
-
----
-
-## 🆘 Troubleshooting
-
-**Port in use:**
-```bash
-lsof -ti:3000 | xargs kill -9    # Backend
-lsof -ti:5173 | xargs kill -9    # Frontend
-```
-
-**Database issues:**
-```bash
-psql -U vettly -h localhost -d vettly_db
-cd backend && npx prisma migrate reset
-```
-
-**Redis issues:**
-```bash
-redis-cli ping  # Should return PONG
-```
-
-**Claude API errors:**
-- Check `.env` for valid API key
-- Verify quota on Anthropic dashboard
-- Check rate limits (100k tokens/min)
-
----
-
-## ✨ Feature Checklist
-
-| Feature | Status |
-|---------|--------|
-| RFP Upload | ✅ |
-| Auto Requirement Extraction | ✅ |
-| Proposal Upload | ✅ |
-| Compliance Validation | ✅ |
-| Risk Detection | ✅ |
-| Vendor Comparison | ✅ |
-| Dashboard | ✅ |
-| Audit Logging | ✅ |
-| Manual Review Override | ✅ |
-| Authentication | ✅ |
-
----
-
-## 🚀 Next Steps
-
-1. Copy all files from this repo
-2. Follow setup instructions
-3. Scaffold directories using FOLDER_STRUCTURE.md
-4. Implement services/routes using IMPLEMENTATION_EXAMPLES.ts
-5. Build React components
-6. Write tests
-7. Deploy to production
-
----
-
-**Complete, production-ready architecture. Ready to build!**
-
-Last Updated: March 28, 2026
-Version: 1.0.0
+# Vettly
+
+Vettly is a tender compliance assistant for procurement and bid-evaluation teams.
+
+It helps you move from long, hard-to-read RFP files to a structured review flow where requirements, compliance checks, and risks can be tracked clearly.
+
+## What This Project Does
+
+Vettly is designed to support these outcomes:
+
+- Collect RFP documents in one place
+- Extract readable text from uploaded RFP PDFs
+- Prepare requirement-by-requirement evaluation workflows
+- Compare vendor responses against tender expectations
+- Surface potential risks early for faster decisions
+
+## Who It Is For
+
+- Procurement teams managing multiple bids
+- Legal/commercial reviewers validating contractual alignment
+- PMO and leadership teams that need transparent vendor comparison
+
+## How To Use Vettly
+
+Use Vettly as an operating workflow rather than a single upload tool.
+
+1. Create or open a tender review
+2. Enter a clear project name
+3. Upload the RFP file
+4. Review extracted content for completeness
+5. Use the extracted content as the baseline for compliance checks
+6. Continue with proposal review, risk checks, and comparison views
+
+## Current Working Flow
+
+At the current stage, the most complete flow is the RFP intake path.
+
+- The main page allows users to start a new tender review and upload an RFP
+- The backend provides an RFP upload endpoint that accepts PDF files
+- Uploaded PDF content is parsed and returned as structured response data
+
+This enables a reliable first step in the larger tender-compliance lifecycle.
+
+## Expected Upload Behavior
+
+When uploading an RFP PDF:
+
+- Non-PDF files are rejected
+- Empty or non-extractable PDFs are rejected
+- Oversized files are rejected
+- Valid PDFs return filename, extracted text, page count, and upload timestamp
+
+## Practical Usage Tips
+
+- Use clear project names so reviews remain searchable
+- Prefer text-based PDFs for best extraction quality
+- Keep source documents clean and final before upload
+- Use extracted output as the reference point for all later validation work
+
+## Product Direction
+
+Vettly is being delivered in phases, with RFP ingestion completed first and the remaining tender-validation experience expanding step by step.
+
+The end goal is a single review workspace from RFP intake to final vendor decision.
