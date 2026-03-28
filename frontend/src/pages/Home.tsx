@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import RFPUploadForm from '@/components/upload/RFPUploadForm'
 import RecentProjectsList from '@/components/rfp/RecentProjectsList'
-import { Project } from '@/types'
+import RequirementChecklist from '@/components/requirements/RequirementChecklist'
+import { ExtractRequirementsResponse, Project, Requirement } from '@/types'
 
 export default function Home() {
   // Mock data for recent projects
@@ -40,11 +41,36 @@ export default function Home() {
     },
   ]
 
-  const [projects, setProjects] = useState<Project[]>(mockProjects)
+  const projects = mockProjects
+  const [extractedRequirements, setExtractedRequirements] = useState<Requirement[]>([])
+  const [extractionMeta, setExtractionMeta] = useState<{
+    projectName: string
+    extractedAt: string
+    totalCount: number
+    categoryBreakdown: ExtractRequirementsResponse['categoryBreakdown']
+  } | null>(null)
 
   const handleOpenProject = (projectId: string) => {
     console.log('Opening project:', projectId)
     alert(`Opening project: ${projectId}`)
+  }
+
+  const handleRequirementsExtracted = (
+    payload: ExtractRequirementsResponse & {
+      projectName: string
+    }
+  ) => {
+    setExtractedRequirements(payload.requirements)
+    setExtractionMeta({
+      projectName: payload.projectName,
+      extractedAt: payload.extractedAt,
+      totalCount: payload.totalCount,
+      categoryBreakdown: payload.categoryBreakdown,
+    })
+  }
+
+  const handleConfirmRequirements = (selected: Requirement[]) => {
+    alert(`Confirmed ${selected.length} requirements. Proceeding to validation setup.`)
   }
 
   return (
@@ -119,8 +145,33 @@ export default function Home() {
 
         {/* Upload Section */}
         <section className="mb-16">
-          <RFPUploadForm />
+          <RFPUploadForm onRequirementsExtracted={handleRequirementsExtracted} />
         </section>
+
+        {/* Requirement Review Section */}
+        {extractedRequirements.length > 0 && (
+          <section className="mb-16">
+            {extractionMeta && (
+              <div className="mb-4 rounded-lg border border-legal-blue/30 bg-legal-slate/50 p-4">
+                <h3 className="text-lg font-semibold text-gray-100">Extracted Requirements</h3>
+                <p className="text-sm text-gray-400 mt-1">
+                  Project: <span className="text-gray-200">{extractionMeta.projectName}</span>
+                </p>
+                <p className="text-sm text-gray-400">
+                  Extracted at: {new Date(extractionMeta.extractedAt).toLocaleString()}
+                </p>
+                <p className="text-sm text-gray-400">
+                  Total requirements: <span className="text-gray-200">{extractionMeta.totalCount}</span>
+                </p>
+              </div>
+            )}
+
+            <RequirementChecklist
+              requirements={extractedRequirements}
+              onConfirm={selected => handleConfirmRequirements(selected)}
+            />
+          </section>
+        )}
 
         {/* Recent Projects Section */}
         <section>

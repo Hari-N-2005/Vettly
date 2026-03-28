@@ -1,5 +1,3 @@
-import React from 'react'
-
 interface FilePreviewProps {
   fileName: string
   fileSize: number

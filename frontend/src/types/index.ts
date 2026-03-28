@@ -22,3 +22,35 @@ export interface UploadState {
   isUploading: boolean;
   progress: number;
 }
+
+export type RequirementCategory =
+  | 'Technical'
+  | 'Legal'
+  | 'Financial'
+  | 'Operational'
+  | 'Environmental';
+
+export type RequirementPriority = 'Critical' | 'Standard';
+
+export interface Requirement {
+  id: string;
+  requirementText: string;
+  category: RequirementCategory;
+  keywords_detected: string[];
+  sourceExcerpt: string;
+  priority: RequirementPriority;
+}
+
+export interface UploadRFPResponse {
+  fileName: string;
+  pageCount: number;
+  rawText: string;
+  uploadedAt: string;
+}
+
+export interface ExtractRequirementsResponse {
+  requirements: Requirement[];
+  extractedAt: string;
+  totalCount: number;
+  categoryBreakdown: Record<RequirementCategory, number>;
+}

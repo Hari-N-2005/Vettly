@@ -19,3 +19,5 @@ out/
 coverage/
 .nyc_output/
 progress.md
+prompt_details.md
+sample-rfp.md

@@ -1,10 +1,19 @@
-import React, { useState } from 'react'
+import { ChangeEvent, useState } from 'react'
 import DocumentDropZone from './DocumentDropZone'
 import FilePreview from './FilePreview'
 import Button from '@/components/common/Button'
-import { UploadState } from '@/types'
+import { ExtractRequirementsResponse, UploadState } from '@/types'
+import { extractRequirements, uploadRFPForExtraction } from '@/services/rfpService'
 
-export default function RFPUploadForm() {
+interface RFPUploadFormProps {
+  onRequirementsExtracted?: (
+    payload: ExtractRequirementsResponse & {
+      projectName: string
+    }
+  ) => void
+}
+
+export default function RFPUploadForm({ onRequirementsExtracted }: RFPUploadFormProps) {
   const [uploadState, setUploadState] = useState<UploadState>({
     file: null,
     fileName: '',
@@ -14,6 +23,8 @@ export default function RFPUploadForm() {
   })
 
   const [formErrors, setFormErrors] = useState<{ projectName?: string }>({})
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [statusError, setStatusError] = useState<string | null>(null)
 
   const handleFileSelect = (file: File) => {
     setUploadState(prev => ({
@@ -23,12 +34,14 @@ export default function RFPUploadForm() {
     }))
   }
 
-  const handleProjectNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProjectNameChange = (e: ChangeEvent<HTMLInputElement>) => {
     setUploadState(prev => ({
       ...prev,
       projectName: e.target.value,
     }))
     setFormErrors({})
+    setStatusMessage(null)
+    setStatusError(null)
   }
 
   const validateForm = (): boolean => {
@@ -46,39 +59,47 @@ export default function RFPUploadForm() {
     return Object.keys(errors).length === 0
   }
 
-  const handleAnalyseRFP = () => {
+  const handleAnalyseRFP = async () => {
     if (!validateForm()) return
 
     setUploadState(prev => ({
       ...prev,
       isUploading: true,
     }))
+    setStatusMessage('Uploading RFP and extracting raw text...')
+    setStatusError(null)
 
-    // Simulate API call
-    setTimeout(() => {
-      console.log('Analysing RFP:', {
-        projectName: uploadState.projectName,
-        fileName: uploadState.fileName,
-        fileSize: uploadState.file?.size,
+    try {
+      if (!uploadState.file) {
+        throw new Error('Please select an RFP file before continuing.')
+      }
+
+      const uploadResult = await uploadRFPForExtraction(uploadState.file)
+      setStatusMessage('Extracting mandatory requirements...')
+
+      const extractionResult = await extractRequirements(uploadResult.rawText)
+
+      onRequirementsExtracted?.({
+        ...extractionResult,
+        projectName: uploadState.projectName.trim(),
       })
+
+      setStatusMessage(`Extracted ${extractionResult.totalCount} requirement(s). Review them below.`)
+      setUploadState(prev => ({
+        ...prev,
+        isUploading: false,
+      }))
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to extract requirements from this RFP.'
 
       setUploadState(prev => ({
         ...prev,
         isUploading: false,
       }))
-
-      // Here you would typically navigate to the requirements review page
-      alert(`✅ RFP "${uploadState.projectName}" uploaded successfully!\n\nWould navigate to requirements extraction page.`)
-
-      // Reset form
-      setUploadState({
-        file: null,
-        fileName: '',
-        projectName: '',
-        isUploading: false,
-        progress: 0,
-      })
-    }, 1500)
+      setStatusMessage(null)
+      setStatusError(errorMessage)
+    }
   }
 
   return (
@@ -116,7 +137,11 @@ export default function RFPUploadForm() {
           <label className="block text-sm font-semibold text-gray-200 mb-3">
             RFP Document *
           </label>
-          <DocumentDropZone onFileSelect={handleFileSelect} isLoading={uploadState.isUploading} />
+          <DocumentDropZone
+            onFileSelect={handleFileSelect}
+            isLoading={uploadState.isUploading}
+            acceptedFormats={['.pdf']}
+          />
         </div>
 
         {/* File Preview */}
@@ -152,12 +177,26 @@ export default function RFPUploadForm() {
                 progress: 0,
               })
               setFormErrors({})
+              setStatusMessage(null)
+              setStatusError(null)
             }}
             disabled={uploadState.isUploading}
           >
             Clear
           </Button>
         </div>
+
+        {statusMessage && (
+          <p className="text-sm text-emerald-300 bg-emerald-950/40 border border-emerald-700/40 rounded-lg px-3 py-2">
+            {statusMessage}
+          </p>
+        )}
+
+        {statusError && (
+          <p className="text-sm text-red-300 bg-red-950/40 border border-red-700/40 rounded-lg px-3 py-2">
+            {statusError}
+          </p>
+        )}
       </div>
     </div>
   )
