@@ -54,3 +54,24 @@ export interface ExtractRequirementsResponse {
   totalCount: number;
   categoryBreakdown: Record<RequirementCategory, number>;
 }
+
+export type ComplianceStatus = 'Met' | 'Partially Met' | 'Missing';
+
+export interface ComplianceResult {
+  requirementId: string;
+  status: ComplianceStatus;
+  confidenceScore: number;
+  matchedExcerpt: string | null;
+  explanation: string;
+  suggestedFollowUp?: string;
+}
+
+export interface ValidateVendorResponse {
+  vendorName: string;
+  complianceResults: ComplianceResult[];
+  overallScore: number;
+  metCount: number;
+  partialCount: number;
+  missingCount: number;
+  processedAt: string;
+}

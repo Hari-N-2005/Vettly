@@ -4,6 +4,7 @@ import helmet from 'helmet'
 import dotenv from 'dotenv'
 import multer from 'multer'
 import pdfParse from 'pdf-parse'
+import pLimit from 'p-limit'
 
 dotenv.config()
 
@@ -19,6 +20,32 @@ interface Requirement {
   keywords_detected: string[]
   sourceExcerpt: string
   priority: RequirementPriority
+}
+
+interface ValidationRequirement {
+  id: string
+  requirementText: string
+}
+
+type ComplianceStatus = 'Met' | 'Partially Met' | 'Missing'
+
+interface ComplianceResult {
+  requirementId: string
+  status: ComplianceStatus
+  confidenceScore: number
+  matchedExcerpt: string | null
+  explanation: string
+  suggestedFollowUp?: string
+}
+
+interface VendorValidationResponse {
+  vendorName: string
+  complianceResults: ComplianceResult[]
+  overallScore: number
+  metCount: number
+  partialCount: number
+  missingCount: number
+  processedAt: string
 }
 
 const REQUIREMENT_CATEGORIES: RequirementCategory[] = [
@@ -88,6 +115,56 @@ Quality checks before output:
 - Ensure no empty fields.
 - Ensure category and priority are from allowed enums only.`
 
+const SEMANTIC_MATCHING_SYSTEM_PROMPT = `You are an expert bid-compliance semantic matching engine.
+Your task is to evaluate one requirement against full vendor proposal text and return a strict JSON object.
+
+Goal:
+Return only one valid JSON object. No markdown, no code fences, no commentary, no trailing text.
+
+Input:
+- requirement: a single object that includes at least { id, requirementText }
+- proposalText: full vendor proposal text (may be long)
+
+Matching rules:
+- Perform semantic matching, not only exact keyword matching.
+- Treat equivalent wording as a match when meaning is the same (for example, "round-the-clock" == "24/7 support", "continuous support", "all-day coverage").
+- Prefer direct evidence from proposalText. If multiple candidate matches exist, use the strongest and most specific one.
+- If evidence is incomplete, classify as Partially Met.
+- If no credible evidence is found, classify as Missing.
+- Do not invent evidence.
+
+Status definitions:
+- Met: Proposal clearly satisfies the full requirement.
+- Partially Met: Proposal addresses part of the requirement or is ambiguous/incomplete.
+- Missing: Proposal does not address the requirement at all.
+
+Confidence scoring:
+- Return an integer from 0 to 100.
+- 85-100: strong explicit semantic or direct match.
+- 60-84: partial/indirect match with reasonable evidence.
+- 0-59: weak or no evidence.
+
+Output schema (strict):
+{
+  "requirementId": "string",
+  "status": "Met | Partially Met | Missing",
+  "confidenceScore": 0,
+  "matchedExcerpt": "string or null",
+  "explanation": "1-2 sentences",
+  "suggestedFollowUp": "string (optional clarification question)"
+}
+
+Field rules:
+- requirementId: copy exactly from requirement.id.
+- status: must be exactly one of "Met", "Partially Met", "Missing".
+- confidenceScore: integer only.
+- matchedExcerpt: the most relevant sentence from proposalText; null only if status is Missing.
+- explanation: 1-2 concise sentences explaining why status was chosen.
+- suggestedFollowUp:
+  - Include only if status is Partially Met or Missing.
+  - Omit this field when status is Met.
+- Return valid JSON only.`
+
 const sleep = async (ms: number): Promise<void> => {
   await new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -130,6 +207,25 @@ const tryExtractJSONArrayText = (rawText: string): string => {
   return trimmed
 }
 
+const tryExtractJSONObjectText = (rawText: string): string => {
+  const trimmed = rawText.trim()
+
+  if (trimmed.startsWith('```')) {
+    const withoutFenceStart = trimmed.replace(/^```(?:json)?\s*/i, '')
+    const withoutFence = withoutFenceStart.replace(/\s*```$/, '')
+    return withoutFence.trim()
+  }
+
+  const firstObjectBrace = trimmed.indexOf('{')
+  const lastObjectBrace = trimmed.lastIndexOf('}')
+
+  if (firstObjectBrace !== -1 && lastObjectBrace !== -1 && lastObjectBrace > firstObjectBrace) {
+    return trimmed.slice(firstObjectBrace, lastObjectBrace + 1)
+  }
+
+  return trimmed
+}
+
 const isRequirementCategory = (value: unknown): value is RequirementCategory => {
   return typeof value === 'string' && REQUIREMENT_CATEGORIES.includes(value as RequirementCategory)
 }
@@ -153,6 +249,39 @@ const isRequirement = (value: unknown): value is Requirement => {
     typeof candidate.sourceExcerpt === 'string' &&
     isRequirementPriority(candidate.priority)
   )
+}
+
+const isComplianceStatus = (value: unknown): value is ComplianceStatus => {
+  return value === 'Met' || value === 'Partially Met' || value === 'Missing'
+}
+
+const parseValidationRequirements = (rawRequirements: unknown): ValidationRequirement[] => {
+  const parsedInput = typeof rawRequirements === 'string' ? JSON.parse(rawRequirements) : rawRequirements
+
+  if (!Array.isArray(parsedInput)) {
+    throw new Error('Invalid requirements input. Expected an array.')
+  }
+
+  const requirements = parsedInput.map((item, index) => {
+    if (!item || typeof item !== 'object') {
+      throw new Error(`Requirement at index ${index} is not a valid object.`)
+    }
+
+    const candidate = item as Partial<ValidationRequirement>
+    const id = typeof candidate.id === 'string' ? candidate.id.trim() : ''
+    const requirementText =
+      typeof candidate.requirementText === 'string' ? candidate.requirementText.trim() : ''
+
+    if (!id || !requirementText) {
+      throw new Error(
+        `Requirement at index ${index} must include non-empty id and requirementText fields.`
+      )
+    }
+
+    return { id, requirementText }
+  })
+
+  return requirements
 }
 
 const parseAndValidateRequirements = (rawModelText: string): Requirement[] => {
@@ -191,6 +320,75 @@ const parseAndValidateRequirements = (rawModelText: string): Requirement[] => {
   }
 
   return requirements
+}
+
+const parseAndValidateComplianceResult = (
+  rawModelText: string,
+  requirementId: string
+): ComplianceResult => {
+  const jsonObjectText = tryExtractJSONObjectText(rawModelText)
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(jsonObjectText)
+  } catch {
+    throw new Error('Model response is not valid JSON object.')
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Model response must be a JSON object.')
+  }
+
+  const candidate = parsed as Partial<ComplianceResult>
+
+  if (!isComplianceStatus(candidate.status)) {
+    throw new Error('Model response contains invalid compliance status.')
+  }
+
+  const rawConfidence = candidate.confidenceScore
+  if (typeof rawConfidence !== 'number' || !Number.isInteger(rawConfidence)) {
+    throw new Error('Model response must contain integer confidenceScore.')
+  }
+
+  const boundedConfidence = Math.max(0, Math.min(100, rawConfidence))
+  const explanation = typeof candidate.explanation === 'string' ? candidate.explanation.trim() : ''
+
+  if (!explanation) {
+    throw new Error('Model response must contain non-empty explanation.')
+  }
+
+  let matchedExcerpt: string | null = null
+  if (typeof candidate.matchedExcerpt === 'string' && candidate.matchedExcerpt.trim()) {
+    matchedExcerpt = candidate.matchedExcerpt.trim()
+  }
+
+  if (candidate.status !== 'Missing' && matchedExcerpt === null) {
+    throw new Error('Model response must include matchedExcerpt for Met or Partially Met status.')
+  }
+
+  if (candidate.status === 'Missing') {
+    matchedExcerpt = null
+  }
+
+  const suggestedFollowUp =
+    typeof candidate.suggestedFollowUp === 'string' && candidate.suggestedFollowUp.trim()
+      ? candidate.suggestedFollowUp.trim()
+      : undefined
+
+  const normalized: ComplianceResult = {
+    requirementId,
+    status: candidate.status,
+    confidenceScore: boundedConfidence,
+    matchedExcerpt,
+    explanation,
+    ...(suggestedFollowUp ? { suggestedFollowUp } : {}),
+  }
+
+  if (normalized.status === 'Met' && normalized.suggestedFollowUp) {
+    delete normalized.suggestedFollowUp
+  }
+
+  return normalized
 }
 
 const MANDATORY_PHRASES = [
@@ -257,6 +455,135 @@ const extractRequirementsLocally = (rfpText: string): Requirement[] => {
   }
 
   return results
+}
+
+const SEMANTIC_EQUIVALENCE_GROUPS: string[][] = [
+  ['24/7', '24x7', 'round-the-clock', 'round the clock', 'continuous support', 'all-day coverage'],
+  ['support', 'service desk', 'helpdesk', 'help desk', 'technical support'],
+  ['critical incident', 'severity 1', 'sev1', 'p1 incident', 'priority 1'],
+  ['iso 27001', 'information security certification', 'isms certification'],
+]
+
+const STOPWORDS = new Set([
+  'the',
+  'and',
+  'for',
+  'with',
+  'that',
+  'this',
+  'from',
+  'shall',
+  'must',
+  'required',
+  'mandatory',
+  'vendor',
+  'provide',
+  'will',
+  'be',
+  'is',
+  'to',
+  'of',
+  'in',
+  'on',
+])
+
+const normalizeForSemanticMatch = (text: string): string => {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const splitIntoSentences = (text: string): string[] => {
+  return text
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map(sentence => sentence.trim())
+    .filter(Boolean)
+}
+
+const hasAnyTerm = (normalizedText: string, terms: string[]): boolean => {
+  return terms.some(term => normalizedText.includes(normalizeForSemanticMatch(term)))
+}
+
+const extractContentTokens = (text: string): string[] => {
+  const tokens = normalizeForSemanticMatch(text).split(' ')
+  return tokens.filter(token => token.length >= 4 && !STOPWORDS.has(token))
+}
+
+const fallbackSemanticMatch = (
+  requirement: ValidationRequirement,
+  proposalText: string,
+  reason?: string
+): ComplianceResult => {
+  const sentences = splitIntoSentences(proposalText)
+  const requirementNormalized = normalizeForSemanticMatch(requirement.requirementText)
+  const requirementTokens = extractContentTokens(requirement.requirementText)
+
+  let bestSentence = ''
+  let bestScore = 0
+
+  for (const sentence of sentences) {
+    const sentenceNormalized = normalizeForSemanticMatch(sentence)
+    const sentenceTokens = new Set(extractContentTokens(sentence))
+
+    let score = 0
+
+    // Semantic synonym groups contribute high confidence signal.
+    for (const group of SEMANTIC_EQUIVALENCE_GROUPS) {
+      if (hasAnyTerm(requirementNormalized, group) && hasAnyTerm(sentenceNormalized, group)) {
+        score += 3
+      }
+    }
+
+    const tokenMatches = requirementTokens.filter(token => sentenceTokens.has(token)).length
+    score += tokenMatches
+
+    if (score > bestScore) {
+      bestScore = score
+      bestSentence = sentence
+    }
+  }
+
+  let status: ComplianceStatus = 'Missing'
+  let confidenceScore = 18
+  let matchedExcerpt: string | null = null
+  let explanation =
+    'No strong semantic evidence was found in the proposal text for this requirement.'
+  let suggestedFollowUp =
+    'Could you provide a direct statement in the proposal showing how this requirement is met?'
+
+  if (bestScore >= 6) {
+    status = 'Met'
+    confidenceScore = Math.min(97, 85 + bestScore)
+    matchedExcerpt = bestSentence
+    explanation =
+      'The proposal sentence semantically aligns with the requirement intent with strong keyword and synonym overlap.'
+    suggestedFollowUp = undefined as unknown as string
+  } else if (bestScore >= 3) {
+    status = 'Partially Met'
+    confidenceScore = Math.min(84, 60 + bestScore * 3)
+    matchedExcerpt = bestSentence
+    explanation =
+      'The proposal provides partial semantic evidence, but does not fully satisfy all requirement details.'
+    suggestedFollowUp =
+      'Can you clarify how the proposal fully satisfies every part of this requirement?'
+  }
+
+  if (reason) {
+    explanation = `${explanation} Fallback used: ${reason}`
+  }
+
+  const result: ComplianceResult = {
+    requirementId: requirement.id,
+    status,
+    confidenceScore,
+    matchedExcerpt,
+    explanation,
+    ...(status === 'Met' ? {} : { suggestedFollowUp }),
+  }
+
+  return result
 }
 
 interface GeminiHttpError extends Error {
@@ -450,6 +777,126 @@ const callGeminiForRequirements = async (rfpText: string): Promise<Requirement[]
   throw new Error('Gemini API request failed unexpectedly.')
 }
 
+const callGeminiSemanticMatchWithModel = async (
+  model: string,
+  apiKey: string,
+  requirement: ValidationRequirement,
+  proposalText: string
+): Promise<ComplianceResult> => {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`
+
+  const payload = {
+    system_instruction: {
+      role: 'system',
+      parts: [{ text: SEMANTIC_MATCHING_SYSTEM_PROMPT }],
+    },
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            text: `Evaluate this requirement against the proposal text and return strict JSON only.\n\nrequirement = ${JSON.stringify(requirement)}\n\nproposalText = ${proposalText}`,
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0,
+      responseMimeType: 'application/json',
+    },
+  }
+
+  const maxAttempts = 2
+  const baseDelayMs = 500
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (response.status === 429) {
+      if (attempt === maxAttempts) {
+        throw new Error('Rate limited by Gemini API after multiple retries.')
+      }
+
+      const retryAfterSeconds = parseRetryAfterSeconds(response.headers.get('retry-after'))
+      const exponentialBackoffMs = baseDelayMs * 2 ** (attempt - 1)
+      const delayMs = retryAfterSeconds ? retryAfterSeconds * 1000 : exponentialBackoffMs
+
+      await sleep(delayMs)
+      continue
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw createGeminiHttpError(response.status, errorText)
+    }
+
+    const body = (await response.json()) as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{ text?: string }>
+        }
+      }>
+    }
+
+    const textPart = body.candidates?.[0]?.content?.parts?.find(part => typeof part.text === 'string')
+
+    if (!textPart?.text) {
+      throw new Error('Gemini API response does not contain text output.')
+    }
+
+    return parseAndValidateComplianceResult(textPart.text, requirement.id)
+  }
+
+  throw new Error('Gemini API request failed unexpectedly.')
+}
+
+const callGeminiForSemanticMatch = async (
+  requirement: ValidationRequirement,
+  proposalText: string
+): Promise<ComplianceResult> => {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY is not configured.')
+  }
+
+  const configuredModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
+  const modelCandidates = await getGeminiModelCandidates(configuredModel, apiKey)
+
+  let lastError: unknown = null
+
+  for (const model of modelCandidates) {
+    try {
+      return await callGeminiSemanticMatchWithModel(model, apiKey, requirement, proposalText)
+    } catch (error) {
+      lastError = error
+
+      if (isGeminiHttpError(error) && error.status === 404) {
+        continue
+      }
+
+      throw error
+    }
+  }
+
+  if (isGeminiHttpError(lastError) && lastError.status === 404) {
+    throw new Error(
+      `No compatible Gemini model found for generateContent. Checked models: ${modelCandidates.join(', ')}`
+    )
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError
+  }
+
+  throw new Error('Gemini API request failed unexpectedly.')
+}
+
 // Store uploaded files in memory so we can parse the PDF buffer directly.
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -572,9 +1019,14 @@ app.post('/api/extract-requirements', async (req: Request, res: Response) => {
       categoryBreakdown,
     })
   } catch (error) {
-    console.error('Requirement extraction failed:', error)
-
     const message = error instanceof Error ? error.message : 'Unknown extraction error'
+
+    if (message.includes('Rate limited')) {
+      console.warn('Requirement extraction Gemini rate-limited; using local fallback.')
+    } else {
+      console.error('Requirement extraction failed:', error)
+    }
+
     const malformedResponseError =
       message.includes('not valid JSON array') ||
       message.includes('must be a JSON array') ||
@@ -629,6 +1081,113 @@ app.post('/api/extract-requirements', async (req: Request, res: Response) => {
       details: message,
     })
   }
+})
+
+// Validate a vendor proposal PDF against an array of requirements.
+app.post('/api/validate-vendor', (req: Request, res: Response) => {
+  upload.single('file')(req, res, async err => {
+    if (err) {
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          res.status(400).json({ error: 'File too large. Maximum allowed size is 10MB.' })
+          return
+        }
+        res.status(400).json({ error: `Upload error: ${err.message}` })
+        return
+      }
+
+      res.status(400).json({ error: err.message || 'Invalid upload request' })
+      return
+    }
+
+    if (!req.file) {
+      res.status(400).json({ error: 'No file uploaded. Provide a PDF file in form field "file".' })
+      return
+    }
+
+    let requirements: ValidationRequirement[]
+    try {
+      requirements = parseValidationRequirements(req.body?.requirements)
+      if (requirements.length === 0) {
+        res.status(400).json({ error: 'Requirements array must not be empty.' })
+        return
+      }
+    } catch (parseError) {
+      const message = parseError instanceof Error ? parseError.message : 'Invalid requirements input.'
+      res.status(400).json({ error: message })
+      return
+    }
+
+    let proposalText = ''
+    try {
+      const parsedPdf = await pdfParse(req.file.buffer)
+      proposalText = (parsedPdf.text || '').trim()
+
+      if (!proposalText) {
+        res.status(400).json({ error: 'Uploaded PDF contains no extractable text.' })
+        return
+      }
+    } catch (parseError) {
+      console.error('Failed to parse uploaded vendor PDF:', parseError)
+      res.status(500).json({ error: 'Failed to parse vendor PDF file.' })
+      return
+    }
+
+    const vendorNameFromBody =
+      typeof req.body?.vendorName === 'string' ? req.body.vendorName.trim() : ''
+    const vendorName =
+      vendorNameFromBody || req.file.originalname.replace(/\.pdf$/i, '').trim() || 'Unknown Vendor'
+
+    const limit = pLimit(5)
+    const complianceResults = await Promise.all(
+      requirements.map(requirement =>
+        limit(async (): Promise<ComplianceResult> => {
+          try {
+            return await callGeminiForSemanticMatch(requirement, proposalText)
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown validation error'
+
+            if (message.includes('Rate limited')) {
+              console.warn(`Gemini rate-limited for ${requirement.id}; using semantic fallback result.`)
+            } else {
+              console.error(`Failed to validate requirement ${requirement.id}:`, error)
+            }
+
+            return fallbackSemanticMatch(requirement, proposalText, message)
+          }
+        })
+      )
+    )
+
+    const metCount = complianceResults.filter(result => result.status === 'Met').length
+    const partialCount = complianceResults.filter(result => result.status === 'Partially Met').length
+    const missingCount = complianceResults.filter(result => result.status === 'Missing').length
+
+    const totalPoints = complianceResults.reduce((sum, result) => {
+      if (result.status === 'Met') {
+        return sum + 100
+      }
+      if (result.status === 'Partially Met') {
+        return sum + 50
+      }
+      return sum
+    }, 0)
+
+    const overallScore =
+      complianceResults.length > 0 ? Math.round(totalPoints / complianceResults.length) : 0
+
+    const responsePayload: VendorValidationResponse = {
+      vendorName,
+      complianceResults,
+      overallScore,
+      metCount,
+      partialCount,
+      missingCount,
+      processedAt: new Date().toISOString(),
+    }
+
+    res.status(200).json(responsePayload)
+  })
 })
 
 // API Routes (to be implemented)
