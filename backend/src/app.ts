@@ -48,6 +48,38 @@ interface VendorValidationResponse {
   processedAt: string
 }
 
+type RiskType =
+  | 'Liability'
+  | 'Cost Escalation'
+  | 'Vague Commitment'
+  | 'Approval Dependency'
+  | 'Scope Creep'
+
+type RiskSeverity = 'High' | 'Medium' | 'Low'
+type ToneAssessment = 'Evasive' | 'Ambiguous' | 'Acceptable'
+
+interface RiskFlag {
+  riskId: string
+  flaggedText: string
+  riskType: RiskType
+  severity: RiskSeverity
+  impactSummary: string
+  toneAssessment: ToneAssessment
+}
+
+interface RiskScanResponse {
+  vendorName: string
+  riskFlags: RiskFlag[]
+  riskSummary: {
+    high: number
+    medium: number
+    low: number
+  }
+  overallToneScore: number
+  scannedAt: string
+  note?: string
+}
+
 const REQUIREMENT_CATEGORIES: RequirementCategory[] = [
   'Technical',
   'Legal',
@@ -165,6 +197,64 @@ Field rules:
   - Omit this field when status is Met.
 - Return valid JSON only.`
 
+const RISK_SCAN_SYSTEM_PROMPT = `You are an expert procurement risk analyst focused on hidden legal and commercial risk language in vendor proposals.
+
+Task:
+Analyze the provided vendor proposal text and identify risky, non-committal, or commercially unfavorable clauses.
+
+Primary detection targets:
+- "subject to change"
+- "at our discretion"
+- "additional fees may apply"
+- "limited liability"
+- "best efforts"
+- "pending approval"
+- "may vary"
+- and semantically similar language (e.g., "as determined by us", "not guaranteed", "where applicable", "from time to time", "indicative only", "subject to availability", "reserves the right", "to be mutually agreed", "commercially reasonable efforts", "estimate only").
+
+What to flag:
+1. Liability limitations, disclaimers, indemnity imbalance.
+2. Cost uncertainty, variable pricing, pass-through charges, optional surcharges.
+3. Vague commitment language lacking firm obligations, dates, or measurable outcomes.
+4. Dependencies on external/internal approvals that could delay delivery.
+5. Scope ambiguity that can lead to change orders, exclusions, or interpretation drift.
+
+Output requirements:
+- Return strict JSON only. No markdown, no commentary, no code fences.
+- Return a single JSON object with:
+  - "risks": an array of risk objects
+  - "toneScore": integer 0-10 (10 = fully committed language, 0 = highly evasive/non-committal)
+- Each risk object must be:
+  {
+    "riskId": "RISK-001",
+    "flaggedText": "exact quote from proposal",
+    "riskType": "Liability" | "Cost Escalation" | "Vague Commitment" | "Approval Dependency" | "Scope Creep",
+    "severity": "High" | "Medium" | "Low",
+    "impactSummary": "Exactly 2 sentences describing likely contractual/commercial impact.",
+    "toneAssessment": "Evasive" | "Ambiguous" | "Acceptable"
+  }
+
+Strict rules:
+- flaggedText must be an exact quote copied from the proposal.
+- Do not invent text not present in the proposal.
+- Use one risk per distinct problematic quote; avoid duplicates.
+- If no material risks are found, return:
+  { "risks": [], "toneScore": <calculated_score> }
+- riskId must be sequential: RISK-001, RISK-002, ...
+- severity guidance:
+  - High: likely to materially affect liability, pricing certainty, or enforceability.
+  - Medium: moderate ambiguity or negotiable risk.
+  - Low: minor caveat with limited commercial impact.
+- toneAssessment guidance:
+  - Evasive: clear avoidance of firm obligation.
+  - Ambiguous: unclear commitment but not overtly evasive.
+  - Acceptable: wording mostly committal with manageable caveat.
+- toneScore guidance:
+  - Start from 10 and reduce for each risky pattern.
+  - Heavier deductions for High severity and repeated evasive language.
+  - Keep as integer between 0 and 10.
+- Return valid JSON only.`
+
 const sleep = async (ms: number): Promise<void> => {
   await new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -253,6 +343,93 @@ const isRequirement = (value: unknown): value is Requirement => {
 
 const isComplianceStatus = (value: unknown): value is ComplianceStatus => {
   return value === 'Met' || value === 'Partially Met' || value === 'Missing'
+}
+
+const RISK_TYPES: RiskType[] = [
+  'Liability',
+  'Cost Escalation',
+  'Vague Commitment',
+  'Approval Dependency',
+  'Scope Creep',
+]
+
+const RISK_SEVERITIES: RiskSeverity[] = ['High', 'Medium', 'Low']
+const TONE_ASSESSMENTS: ToneAssessment[] = ['Evasive', 'Ambiguous', 'Acceptable']
+
+const isRiskType = (value: unknown): value is RiskType => {
+  return typeof value === 'string' && RISK_TYPES.includes(value as RiskType)
+}
+
+const isRiskSeverity = (value: unknown): value is RiskSeverity => {
+  return typeof value === 'string' && RISK_SEVERITIES.includes(value as RiskSeverity)
+}
+
+const isToneAssessment = (value: unknown): value is ToneAssessment => {
+  return typeof value === 'string' && TONE_ASSESSMENTS.includes(value as ToneAssessment)
+}
+
+const parseAndValidateRiskScanResult = (
+  rawModelText: string
+): { riskFlags: RiskFlag[]; overallToneScore: number } => {
+  const jsonObjectText = tryExtractJSONObjectText(rawModelText)
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(jsonObjectText)
+  } catch {
+    throw new Error('Model response is not valid JSON object for risk scan.')
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Risk scan model response must be a JSON object.')
+  }
+
+  const candidate = parsed as {
+    risks?: unknown
+    toneScore?: unknown
+  }
+
+  if (!Array.isArray(candidate.risks)) {
+    throw new Error('Risk scan response must include risks array.')
+  }
+
+  const toneScoreRaw = candidate.toneScore
+  if (typeof toneScoreRaw !== 'number' || !Number.isInteger(toneScoreRaw)) {
+    throw new Error('Risk scan response must include integer toneScore.')
+  }
+
+  const overallToneScore = Math.max(0, Math.min(10, toneScoreRaw))
+
+  const riskFlags: RiskFlag[] = candidate.risks.map((item, index) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error(`Risk at index ${index} is not a valid object.`)
+    }
+
+    const risk = item as Partial<RiskFlag>
+
+    if (
+      typeof risk.flaggedText !== 'string' ||
+      !risk.flaggedText.trim() ||
+      !isRiskType(risk.riskType) ||
+      !isRiskSeverity(risk.severity) ||
+      typeof risk.impactSummary !== 'string' ||
+      !risk.impactSummary.trim() ||
+      !isToneAssessment(risk.toneAssessment)
+    ) {
+      throw new Error(`Risk at index ${index} contains malformed fields.`)
+    }
+
+    return {
+      riskId: `RISK-${String(index + 1).padStart(3, '0')}`,
+      flaggedText: risk.flaggedText.trim(),
+      riskType: risk.riskType,
+      severity: risk.severity,
+      impactSummary: risk.impactSummary.trim(),
+      toneAssessment: risk.toneAssessment,
+    }
+  })
+
+  return { riskFlags, overallToneScore }
 }
 
 const parseValidationRequirements = (rawRequirements: unknown): ValidationRequirement[] => {
@@ -586,6 +763,120 @@ const fallbackSemanticMatch = (
   return result
 }
 
+const RISK_HEURISTIC_RULES: Array<{
+  phrases: string[]
+  riskType: RiskType
+  severity: RiskSeverity
+  toneAssessment: ToneAssessment
+  impactSummary: string
+}> = [
+  {
+    phrases: ['limited liability', 'liability is limited', 'no liability', 'liability cap'],
+    riskType: 'Liability',
+    severity: 'High',
+    toneAssessment: 'Evasive',
+    impactSummary:
+      'This clause can materially reduce vendor accountability for delivery failures or damages. It may leave the buyer with limited contractual remedies if issues arise.',
+  },
+  {
+    phrases: ['additional fees may apply', 'fees may apply', 'extra charges', 'subject to additional charges'],
+    riskType: 'Cost Escalation',
+    severity: 'High',
+    toneAssessment: 'Ambiguous',
+    impactSummary:
+      'This language introduces open-ended commercial exposure beyond the quoted baseline. It can result in unplanned budget increases during execution.',
+  },
+  {
+    phrases: ['subject to change', 'may vary', 'pricing may vary', 'subject to revision'],
+    riskType: 'Cost Escalation',
+    severity: 'Medium',
+    toneAssessment: 'Ambiguous',
+    impactSummary:
+      'The commitment is not fixed and can shift after award or during delivery. This reduces predictability for planning, procurement, and controls.',
+  },
+  {
+    phrases: ['at our discretion', 'sole discretion', 'reserves the right'],
+    riskType: 'Scope Creep',
+    severity: 'High',
+    toneAssessment: 'Evasive',
+    impactSummary:
+      'This gives one party unilateral control over interpretation or execution boundaries. It can cause scope drift and disputes over agreed responsibilities.',
+  },
+  {
+    phrases: ['best efforts', 'commercially reasonable efforts', 'reasonable efforts'],
+    riskType: 'Vague Commitment',
+    severity: 'Medium',
+    toneAssessment: 'Ambiguous',
+    impactSummary:
+      'The language avoids measurable obligations and makes enforcement difficult. Performance outcomes may be contested because commitments are not explicit.',
+  },
+  {
+    phrases: ['pending approval', 'subject to approval', 'internal approval required', 'board approval'],
+    riskType: 'Approval Dependency',
+    severity: 'Medium',
+    toneAssessment: 'Ambiguous',
+    impactSummary:
+      'Delivery is contingent on additional approvals outside the current commitment. This may create timeline uncertainty and execution delays.',
+  },
+]
+
+const extractRiskFlagsLocally = (
+  vendorProposalText: string,
+  reason?: string
+): { riskFlags: RiskFlag[]; overallToneScore: number } => {
+  const sentences = splitIntoSentences(vendorProposalText)
+  const collected: RiskFlag[] = []
+  const seen = new Set<string>()
+
+  for (const sentence of sentences) {
+    const normalizedSentence = normalizeForSemanticMatch(sentence)
+
+    for (const rule of RISK_HEURISTIC_RULES) {
+      const matchedPhrase = rule.phrases.find(phrase =>
+        normalizedSentence.includes(normalizeForSemanticMatch(phrase))
+      )
+
+      if (!matchedPhrase) {
+        continue
+      }
+
+      const key = `${rule.riskType}:${normalizeForSemanticMatch(sentence)}`
+      if (seen.has(key)) {
+        continue
+      }
+
+      seen.add(key)
+      collected.push({
+        riskId: 'RISK-000',
+        flaggedText: sentence,
+        riskType: rule.riskType,
+        severity: rule.severity,
+        impactSummary: reason ? `${rule.impactSummary} Fallback used: ${reason}` : rule.impactSummary,
+        toneAssessment: rule.toneAssessment,
+      })
+    }
+  }
+
+  const riskFlags = collected.map((item, index) => ({
+    ...item,
+    riskId: `RISK-${String(index + 1).padStart(3, '0')}`,
+  }))
+
+  const severityPenalty = riskFlags.reduce((sum, risk) => {
+    if (risk.severity === 'High') {
+      return sum + 2
+    }
+    if (risk.severity === 'Medium') {
+      return sum + 1
+    }
+    return sum + 0.5
+  }, 0)
+
+  const overallToneScore = Math.max(0, Math.min(10, Math.round(10 - severityPenalty)))
+
+  return { riskFlags, overallToneScore }
+}
+
 interface GeminiHttpError extends Error {
   status: number
   responseBody: string
@@ -873,6 +1164,126 @@ const callGeminiForSemanticMatch = async (
   for (const model of modelCandidates) {
     try {
       return await callGeminiSemanticMatchWithModel(model, apiKey, requirement, proposalText)
+    } catch (error) {
+      lastError = error
+
+      if (isGeminiHttpError(error) && error.status === 404) {
+        continue
+      }
+
+      throw error
+    }
+  }
+
+  if (isGeminiHttpError(lastError) && lastError.status === 404) {
+    throw new Error(
+      `No compatible Gemini model found for generateContent. Checked models: ${modelCandidates.join(', ')}`
+    )
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError
+  }
+
+  throw new Error('Gemini API request failed unexpectedly.')
+}
+
+const callGeminiRiskScanWithModel = async (
+  model: string,
+  apiKey: string,
+  vendorProposalText: string,
+  vendorName: string
+): Promise<{ riskFlags: RiskFlag[]; overallToneScore: number }> => {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`
+
+  const payload = {
+    system_instruction: {
+      role: 'system',
+      parts: [{ text: RISK_SCAN_SYSTEM_PROMPT }],
+    },
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            text: `Scan this vendor proposal for hidden legal and commercial risks. Return strict JSON only.\n\nvendorName = ${vendorName}\n\nvendorProposalText = ${vendorProposalText}`,
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0,
+      responseMimeType: 'application/json',
+    },
+  }
+
+  const maxAttempts = 3
+  const baseDelayMs = 700
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (response.status === 429) {
+      if (attempt === maxAttempts) {
+        throw new Error('Rate limited by Gemini API after multiple retries.')
+      }
+
+      const retryAfterSeconds = parseRetryAfterSeconds(response.headers.get('retry-after'))
+      const exponentialBackoffMs = baseDelayMs * 2 ** (attempt - 1)
+      const delayMs = retryAfterSeconds ? retryAfterSeconds * 1000 : exponentialBackoffMs
+
+      await sleep(delayMs)
+      continue
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw createGeminiHttpError(response.status, errorText)
+    }
+
+    const body = (await response.json()) as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{ text?: string }>
+        }
+      }>
+    }
+
+    const textPart = body.candidates?.[0]?.content?.parts?.find(part => typeof part.text === 'string')
+
+    if (!textPart?.text) {
+      throw new Error('Gemini API response does not contain text output.')
+    }
+
+    return parseAndValidateRiskScanResult(textPart.text)
+  }
+
+  throw new Error('Gemini API request failed unexpectedly.')
+}
+
+const callGeminiForRiskScan = async (
+  vendorProposalText: string,
+  vendorName: string
+): Promise<{ riskFlags: RiskFlag[]; overallToneScore: number }> => {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY is not configured.')
+  }
+
+  const configuredModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
+  const modelCandidates = await getGeminiModelCandidates(configuredModel, apiKey)
+
+  let lastError: unknown = null
+
+  for (const model of modelCandidates) {
+    try {
+      return await callGeminiRiskScanWithModel(model, apiKey, vendorProposalText, vendorName)
     } catch (error) {
       lastError = error
 
@@ -1188,6 +1599,128 @@ app.post('/api/validate-vendor', (req: Request, res: Response) => {
 
     res.status(200).json(responsePayload)
   })
+})
+
+// Scan a vendor proposal text for legal/commercial risks.
+app.post('/api/scan-risks', async (req: Request, res: Response) => {
+  const vendorProposalText = req.body?.vendorProposalText
+  const vendorNameRaw = req.body?.vendorName
+
+  if (typeof vendorProposalText !== 'string' || !vendorProposalText.trim()) {
+    res.status(400).json({
+      error: 'Invalid request body. Expected { vendorProposalText: string, vendorName: string }.',
+    })
+    return
+  }
+
+  if (typeof vendorNameRaw !== 'string' || !vendorNameRaw.trim()) {
+    res.status(400).json({
+      error: 'Invalid request body. vendorName must be a non-empty string.',
+    })
+    return
+  }
+
+  const vendorName = vendorNameRaw.trim()
+
+  try {
+    const { riskFlags, overallToneScore } = await callGeminiForRiskScan(
+      vendorProposalText.trim(),
+      vendorName
+    )
+
+    const riskSummary = riskFlags.reduce(
+      (acc, risk) => {
+        if (risk.severity === 'High') {
+          acc.high += 1
+        } else if (risk.severity === 'Medium') {
+          acc.medium += 1
+        } else {
+          acc.low += 1
+        }
+        return acc
+      },
+      { high: 0, medium: 0, low: 0 }
+    )
+
+    const responsePayload: RiskScanResponse = {
+      vendorName,
+      riskFlags,
+      riskSummary,
+      overallToneScore,
+      scannedAt: new Date().toISOString(),
+      ...(riskFlags.length === 0
+        ? { note: 'No material legal or commercial risks were detected in the proposal text.' }
+        : {}),
+    }
+
+    res.status(200).json(responsePayload)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown risk scan error'
+
+    if (message.includes('GEMINI_API_KEY is not configured')) {
+      res.status(500).json({
+        error: 'Server is missing Gemini API configuration.',
+        details: message,
+      })
+      return
+    }
+
+    const malformedResponseError =
+      message.includes('not valid JSON object for risk scan') ||
+      message.includes('must be a JSON object') ||
+      message.includes('must include risks array') ||
+      message.includes('contains malformed fields')
+
+    if (malformedResponseError) {
+      res.status(502).json({
+        error: 'AI returned malformed risk scan data.',
+        details: message,
+      })
+      return
+    }
+
+    if (message.includes('Rate limited')) {
+      console.warn('Risk scan Gemini rate-limited; using local fallback scan.')
+
+      const { riskFlags, overallToneScore } = extractRiskFlagsLocally(
+        vendorProposalText.trim(),
+        message
+      )
+
+      const riskSummary = riskFlags.reduce(
+        (acc, risk) => {
+          if (risk.severity === 'High') {
+            acc.high += 1
+          } else if (risk.severity === 'Medium') {
+            acc.medium += 1
+          } else {
+            acc.low += 1
+          }
+          return acc
+        },
+        { high: 0, medium: 0, low: 0 }
+      )
+
+      res.status(200).json({
+        vendorName,
+        riskFlags,
+        riskSummary,
+        overallToneScore,
+        scannedAt: new Date().toISOString(),
+        note:
+          riskFlags.length === 0
+            ? 'Gemini was rate-limited. Local fallback scan found no material risks.'
+            : 'Gemini was rate-limited. Returned local fallback risk scan results.',
+      })
+      return
+    }
+
+    console.error('Risk scan failed:', error)
+    res.status(500).json({
+      error: 'Failed to scan proposal risks.',
+      details: message,
+    })
+  }
 })
 
 // API Routes (to be implemented)

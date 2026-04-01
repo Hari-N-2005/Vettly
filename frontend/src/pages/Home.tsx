@@ -3,8 +3,18 @@ import RFPUploadForm from '@/components/upload/RFPUploadForm'
 import RecentProjectsList from '@/components/rfp/RecentProjectsList'
 import RequirementChecklist from '@/components/requirements/RequirementChecklist'
 import ComplianceDeepDive from '@/components/compliance/ComplianceDeepDive'
+import RiskFlagPanel from '@/components/risks/RiskFlagPanel'
 import { validateVendorProposal } from '@/services/proposalService'
-import { ComplianceResult, ExtractRequirementsResponse, Project, Requirement, ValidateVendorResponse } from '@/types'
+import { uploadRFPForExtraction } from '@/services/rfpService'
+import { scanVendorRisks } from '@/services/riskService'
+import {
+  ComplianceResult,
+  ExtractRequirementsResponse,
+  Project,
+  Requirement,
+  RiskScanResponse,
+  ValidateVendorResponse,
+} from '@/types'
 
 export default function Home() {
   // Mock data for recent projects
@@ -51,6 +61,9 @@ export default function Home() {
   const [isValidatingVendor, setIsValidatingVendor] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
   const [validationResult, setValidationResult] = useState<ValidateVendorResponse | null>(null)
+  const [isScanningRisks, setIsScanningRisks] = useState(false)
+  const [riskScanError, setRiskScanError] = useState<string | null>(null)
+  const [riskScanResult, setRiskScanResult] = useState<RiskScanResponse | null>(null)
   const [activeComplianceResult, setActiveComplianceResult] = useState<ComplianceResult | null>(null)
   const [extractionMeta, setExtractionMeta] = useState<{
     projectName: string
@@ -75,6 +88,8 @@ export default function Home() {
     setVendorName('')
     setValidationError(null)
     setValidationResult(null)
+    setRiskScanError(null)
+    setRiskScanResult(null)
     setActiveComplianceResult(null)
     setExtractionMeta({
       projectName: payload.projectName,
@@ -88,6 +103,8 @@ export default function Home() {
     setConfirmedRequirements(selected)
     setValidationError(null)
     setValidationResult(null)
+    setRiskScanError(null)
+    setRiskScanResult(null)
   }
 
   const handleValidateVendor = async () => {
@@ -107,12 +124,41 @@ export default function Home() {
       )
 
       setValidationResult(response)
+      setRiskScanError(null)
+      setRiskScanResult(null)
       setActiveComplianceResult(null)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to validate vendor proposal.'
       setValidationError(message)
     } finally {
       setIsValidatingVendor(false)
+    }
+  }
+
+  const handleScanRisks = async () => {
+    if (!vendorProposalFile) {
+      setRiskScanError('Upload a vendor proposal PDF before running risk scan.')
+      return
+    }
+
+    setIsScanningRisks(true)
+    setRiskScanError(null)
+
+    try {
+      const uploadResult = await uploadRFPForExtraction(vendorProposalFile)
+      const resolvedVendorName =
+        validationResult?.vendorName ||
+        vendorName.trim() ||
+        vendorProposalFile.name.replace(/\.pdf$/i, '').trim() ||
+        'Unknown Vendor'
+
+      const scanResult = await scanVendorRisks(uploadResult.rawText, resolvedVendorName)
+      setRiskScanResult(scanResult)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to scan proposal risks.'
+      setRiskScanError(message)
+    } finally {
+      setIsScanningRisks(false)
     }
   }
 
@@ -269,6 +315,15 @@ export default function Home() {
                     {isValidatingVendor ? 'Validating...' : 'Validate Vendor'}
                   </button>
 
+                  <button
+                    type="button"
+                    onClick={handleScanRisks}
+                    disabled={isScanningRisks || !vendorProposalFile}
+                    className="px-4 py-2 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 font-semibold disabled:opacity-60 disabled:cursor-not-allowed hover:bg-amber-500/30 transition-colors"
+                  >
+                    {isScanningRisks ? 'Scanning Risks...' : 'Scan Risks'}
+                  </button>
+
                   {vendorProposalFile && (
                     <span className="text-sm text-gray-300">Selected file: {vendorProposalFile.name}</span>
                   )}
@@ -277,6 +332,12 @@ export default function Home() {
                 {validationError && (
                   <p className="mt-4 text-sm text-red-300 bg-red-950/40 border border-red-700/40 rounded-lg px-3 py-2">
                     {validationError}
+                  </p>
+                )}
+
+                {riskScanError && (
+                  <p className="mt-4 text-sm text-red-300 bg-red-950/40 border border-red-700/40 rounded-lg px-3 py-2">
+                    {riskScanError}
                   </p>
                 )}
 
@@ -348,6 +409,21 @@ export default function Home() {
                         </tbody>
                       </table>
                     </div>
+                  </div>
+                )}
+
+                {riskScanResult && (
+                  <div className="mt-6">
+                    <RiskFlagPanel
+                      vendorName={riskScanResult.vendorName}
+                      riskFlags={riskScanResult.riskFlags}
+                      overallToneScore={riskScanResult.overallToneScore}
+                    />
+                    {riskScanResult.note && (
+                      <p className="mt-3 text-sm text-emerald-200 bg-emerald-950/30 border border-emerald-700/30 rounded-lg px-3 py-2">
+                        {riskScanResult.note}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

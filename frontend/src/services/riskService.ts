@@ -1,4 +1,5 @@
 import api from './api'
+import { RiskScanResponse } from '@/types'
 
 export interface Risk {
   id: string
@@ -21,6 +22,18 @@ export interface RiskAnalysis {
   risks: Risk[]
 }
 
+// Scan vendor proposal text for legal/commercial risks
+export const scanVendorRisks = async (
+  vendorProposalText: string,
+  vendorName: string
+): Promise<RiskScanResponse> => {
+  const response = await api.post('/scan-risks', {
+    vendorProposalText,
+    vendorName,
+  })
+  return response.data
+}
+
 // Analyze risks in project
 export const analyzeRisks = async (projectId: string): Promise<RiskAnalysis> => {
   const response = await api.get(`/risks/${projectId}`)
@@ -40,6 +53,7 @@ export const acknowledgeRisk = async (riskId: string, notes: string): Promise<vo
 
 export default {
   analyzeRisks,
+  scanVendorRisks,
   getRiskDetails,
   acknowledgeRisk,
 }

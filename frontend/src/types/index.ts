@@ -75,3 +75,35 @@ export interface ValidateVendorResponse {
   missingCount: number;
   processedAt: string;
 }
+
+export type RiskType =
+  | 'Liability'
+  | 'Cost Escalation'
+  | 'Vague Commitment'
+  | 'Approval Dependency'
+  | 'Scope Creep';
+
+export type RiskSeverity = 'High' | 'Medium' | 'Low';
+export type ToneAssessment = 'Evasive' | 'Ambiguous' | 'Acceptable';
+
+export interface RiskFlag {
+  riskId: string;
+  flaggedText: string;
+  riskType: RiskType;
+  severity: RiskSeverity;
+  impactSummary: string;
+  toneAssessment: ToneAssessment;
+}
+
+export interface RiskScanResponse {
+  vendorName: string;
+  riskFlags: RiskFlag[];
+  riskSummary: {
+    high: number;
+    medium: number;
+    low: number;
+  };
+  overallToneScore: number;
+  scannedAt: string;
+  note?: string;
+}
