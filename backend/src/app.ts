@@ -5,10 +5,22 @@ import dotenv from 'dotenv'
 import multer from 'multer'
 import pdfParse from 'pdf-parse'
 import pLimit from 'p-limit'
+import crypto from 'crypto'
 
 dotenv.config()
 
 const app: Express = express()
+
+// Cache for vendor validation results keyed by proposal hash + requirement IDs.
+// Avoids re-validating the same vendor proposal multiple times.
+const validationCache = new Map<
+  string,
+  {
+    results: ComplianceResult[]
+    overallScore: number
+    timestamp: number
+  }
+>()
 
 type RequirementCategory = 'Technical' | 'Legal' | 'Financial' | 'Operational' | 'Environmental'
 type RequirementPriority = 'Critical' | 'Standard'
@@ -80,6 +92,19 @@ interface RiskScanResponse {
   note?: string
 }
 
+const REQUIREMENT_PRIORITIES: RequirementPriority[] = ['Critical', 'Standard']
+
+/**
+ * Generate a cache key for vendor validation based on proposal text + requirement IDs.
+ * This allows caching of validation results to avoid redundant API calls.
+ */
+const generateValidationCacheKey = (proposalText: string, requirements: ValidationRequirement[]): string => {
+  const proposalHash = crypto.createHash('sha256').update(proposalText).digest('hex')
+  const requirementIds = requirements.map(r => r.id).sort().join('|')
+  const requirementHash = crypto.createHash('sha256').update(requirementIds).digest('hex')
+  return `${proposalHash}:${requirementHash}`
+}
+
 const REQUIREMENT_CATEGORIES: RequirementCategory[] = [
   'Technical',
   'Legal',
@@ -87,8 +112,6 @@ const REQUIREMENT_CATEGORIES: RequirementCategory[] = [
   'Operational',
   'Environmental',
 ]
-
-const REQUIREMENT_PRIORITIES: RequirementPriority[] = ['Critical', 'Standard']
 
 const REQUIREMENT_EXTRACTION_SYSTEM_PROMPT = `You are an expert procurement compliance extraction engine.
 Your task is to read raw RFP text and extract every mandatory requirement.
@@ -1494,6 +1517,167 @@ app.post('/api/extract-requirements', async (req: Request, res: Response) => {
   }
 })
 
+/**
+ * Validate a batch of requirements (up to 5) in a single Gemini API call.
+ * This dramatically reduces API call count for large requirement sets.
+ * E.g., 30 requirements = 6 API calls instead of 30.
+ */
+const callGeminiForBatchValidation = async (
+  batch: ValidationRequirement[],
+  proposalText: string
+): Promise<ComplianceResult[]> => {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY is not configured.')
+  }
+
+  const configuredModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
+  const modelCandidates = await getGeminiModelCandidates(configuredModel, apiKey)
+
+  let lastError: unknown = null
+
+  for (const model of modelCandidates) {
+    try {
+      return await callGeminiSemanticMatchBatchWithModel(model, apiKey, batch, proposalText)
+    } catch (error) {
+      lastError = error
+
+      if (isGeminiHttpError(error) && error.status === 404) {
+        continue
+      }
+
+      throw error
+    }
+  }
+
+  if (isGeminiHttpError(lastError) && lastError.status === 404) {
+    throw new Error(
+      `No compatible Gemini model found for generateContent. Checked models: ${modelCandidates.join(', ')}`
+    )
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError
+  }
+
+  throw new Error('Gemini API request failed unexpectedly.')
+}
+
+const callGeminiSemanticMatchBatchWithModel = async (
+  model: string,
+  apiKey: string,
+  batch: ValidationRequirement[],
+  proposalText: string
+): Promise<ComplianceResult[]> => {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`
+
+  const batchPrompt = `Evaluate each requirement against the proposal text and return strict JSON array only.
+
+Return JSON array in this exact format:
+[
+  {
+    "requirementId": "REQ-001",
+    "status": "Met|Partially Met|Missing",
+    "matchedExcerpt": "excerpt from proposal or null",
+    "confidenceScore": 0.95,
+    "explanation": "..."
+  },
+  ...
+]
+
+Requirements to evaluate:
+${batch.map(req => `- ${req.id}: ${req.requirementText}`).join('\n')}
+
+Proposal text:
+${proposalText}`
+
+  const payload = {
+    system_instruction: {
+      role: 'system',
+      parts: [{ text: SEMANTIC_MATCHING_SYSTEM_PROMPT }],
+    },
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: batchPrompt }],
+      },
+    ],
+    generationConfig: {
+      temperature: 0,
+      responseMimeType: 'application/json',
+    },
+  }
+
+  const maxAttempts = 2
+  const baseDelayMs = 500
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (response.status === 429) {
+      if (attempt === maxAttempts) {
+        throw new Error('Rate limited by Gemini API after multiple retries.')
+      }
+
+      const retryAfterSeconds = parseRetryAfterSeconds(response.headers.get('retry-after'))
+      const exponentialBackoffMs = baseDelayMs * 2 ** (attempt - 1)
+      const delayMs = retryAfterSeconds ? retryAfterSeconds * 1000 : exponentialBackoffMs
+
+      await sleep(delayMs)
+      continue
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw createGeminiHttpError(response.status, errorText)
+    }
+
+    const body = (await response.json()) as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{ text?: string }>
+        }
+      }>
+    }
+
+    const textPart = body.candidates?.[0]?.content?.parts?.find(part => typeof part.text === 'string')
+
+    if (!textPart?.text) {
+      throw new Error('Gemini API response does not contain text output.')
+    }
+
+    // Parse batch results
+    try {
+      const results = JSON.parse(textPart.text) as Array<{
+        requirementId: string
+        status: 'Met' | 'Partially Met' | 'Missing'
+        matchedExcerpt: string | null
+        confidenceScore: number
+        explanation: string
+      }>
+
+      // Map to ComplianceResult format
+      return results.map(result => ({
+        requirementId: result.requirementId,
+        status: result.status,
+        matchedExcerpt: result.matchedExcerpt,
+        confidenceScore: result.confidenceScore ?? 0.5,
+        explanation: result.explanation || '',
+      }))
+    } catch {
+      throw new Error('Failed to parse batch validation results from Gemini.')
+    }
+  }
+
+  throw new Error('Gemini API request failed unexpectedly.')
+}
+
 // Validate a vendor proposal PDF against an array of requirements.
 app.post('/api/validate-vendor', (req: Request, res: Response) => {
   upload.single('file')(req, res, async err => {
@@ -1549,26 +1733,64 @@ app.post('/api/validate-vendor', (req: Request, res: Response) => {
     const vendorName =
       vendorNameFromBody || req.file.originalname.replace(/\.pdf$/i, '').trim() || 'Unknown Vendor'
 
-    const limit = pLimit(5)
-    const complianceResults = await Promise.all(
-      requirements.map(requirement =>
-        limit(async (): Promise<ComplianceResult> => {
+    // Check cache before processing
+    const cacheKey = generateValidationCacheKey(proposalText, requirements)
+    const cached = validationCache.get(cacheKey)
+
+    if (cached && Date.now() - cached.timestamp < 24 * 60 * 60 * 1000) {
+      // Cache hit! Return cached results (valid for 24 hours)
+      console.log(`Cache hit for vendor ${vendorName} - skipping API calls`)
+
+      const responsePayload: VendorValidationResponse = {
+        vendorName,
+        complianceResults: cached.results,
+        overallScore: cached.overallScore,
+        metCount: cached.results.filter(r => r.status === 'Met').length,
+        partialCount: cached.results.filter(r => r.status === 'Partially Met').length,
+        missingCount: cached.results.filter(r => r.status === 'Missing').length,
+        processedAt: new Date().toISOString(),
+      }
+
+      res.status(200).json(responsePayload)
+      return
+    }
+
+    // Process requirements in batches of 5 to reduce API calls from 30→6.
+    // E.g., 30 requirements = 6 API calls instead of 30.
+    const batchSize = 5
+    const batches: ValidationRequirement[][] = []
+    for (let i = 0; i < requirements.length; i += batchSize) {
+      batches.push(requirements.slice(i, i + batchSize))
+    }
+
+    // Process all batches concurrently (safe since each batch is <= 5 API calls).
+    const batchResults = await Promise.all(
+      batches.map(batch =>
+        (async () => {
           try {
-            return await callGeminiForSemanticMatch(requirement, proposalText)
+            return await callGeminiForBatchValidation(batch, proposalText)
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown validation error'
 
             if (message.includes('Rate limited')) {
-              console.warn(`Gemini rate-limited for ${requirement.id}; using semantic fallback result.`)
+              console.warn(
+                `Gemini rate-limited for batch ${batch.map(r => r.id).join(', ')}; using semantic fallback.`
+              )
             } else {
-              console.error(`Failed to validate requirement ${requirement.id}:`, error)
+              console.error(`Failed to validate batch:`, error)
             }
 
-            return fallbackSemanticMatch(requirement, proposalText, message)
+            // Fallback: use semantic fallback for each requirement in batch
+            return batch.map(requirement =>
+              fallbackSemanticMatch(requirement, proposalText, message)
+            )
           }
-        })
+        })()
       )
     )
+
+    // Flatten batch results into single array
+    const complianceResults = batchResults.flat()
 
     const metCount = complianceResults.filter(result => result.status === 'Met').length
     const partialCount = complianceResults.filter(result => result.status === 'Partially Met').length
@@ -1586,6 +1808,13 @@ app.post('/api/validate-vendor', (req: Request, res: Response) => {
 
     const overallScore =
       complianceResults.length > 0 ? Math.round(totalPoints / complianceResults.length) : 0
+
+    // Store in cache for future requests
+    validationCache.set(cacheKey, {
+      results: complianceResults,
+      overallScore,
+      timestamp: Date.now(),
+    })
 
     const responsePayload: VendorValidationResponse = {
       vendorName,
