@@ -11,7 +11,8 @@ interface RFPUploadFormProps {
   onRequirementsExtracted?: (
     payload: ExtractRequirementsResponse & {
       projectName: string
-    }
+    },
+    file?: File
   ) => void
 }
 
@@ -101,10 +102,13 @@ export default function RFPUploadForm({ onRequirementsExtracted }: RFPUploadForm
 
       const extractionResult = await extractRequirements(uploadResult.rawText)
 
-      onRequirementsExtracted?.({
-        ...extractionResult,
-        projectName: uploadState.projectName.trim(),
-      })
+      onRequirementsExtracted?.(
+        {
+          ...extractionResult,
+          projectName: uploadState.projectName.trim(),
+        },
+        uploadState.file
+      )
 
       setStatusMessage(`Extracted ${extractionResult.totalCount} requirement(s). Review them below.`)
       setUploadState(prev => ({

@@ -7,6 +7,7 @@ import pdfParse from 'pdf-parse'
 import crypto from 'crypto'
 import { PrismaClient } from '@prisma/client'
 import authRouter from './routes/auth'
+import projectsRouter from './routes/projects'
 import { authMiddleware, AuthRequest } from './middleware/authMiddleware'
 
 dotenv.config()
@@ -2044,6 +2045,7 @@ app.post('/api/scan-risks', async (req: Request, res: Response) => {
 // API Routes (to be implemented)
 // Import routes here as they're created:
 app.use('/api/auth', authRouter)
+app.use('/api/projects', projectsRouter)
 // app.use('/api/rfp', rfpRoutes)
 // app.use('/api/compliance', complianceRoutes)
 // app.use('/api/risks', riskRoutes)
