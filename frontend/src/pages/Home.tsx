@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuthStore } from '@/stores/authStore'
 import RFPUploadForm from '@/components/upload/RFPUploadForm'
 import RecentProjectsList from '@/components/rfp/RecentProjectsList'
 import RequirementChecklist from '@/components/requirements/RequirementChecklist'
@@ -19,6 +21,8 @@ import {
 } from '@/types'
 
 export default function Home() {
+  const navigate = useNavigate()
+  const { user, logout } = useAuthStore()
   // Mock data for recent projects
   const mockProjects: Project[] = [
     {
@@ -203,12 +207,23 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <button className="px-4 py-2 text-gray-400 hover:text-gray-100 transition-colors text-sm">
-              Docs
-            </button>
-            <button className="px-4 py-2 bg-legal-accent text-white rounded-lg hover:bg-legal-blue transition-all text-sm font-semibold">
-              Sign In
-            </button>
+            {user && (
+              <>
+                <div className="text-right">
+                  <p className="text-sm font-medium text-gray-100">{user.name || user.email}</p>
+                  <p className="text-xs text-gray-400">{user.email}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    logout()
+                    navigate('/login')
+                  }}
+                  className="px-4 py-2 text-gray-400 hover:text-gray-100 transition-colors text-sm"
+                >
+                  Logout
+                </button>
+              </>
+            )}
           </div>
         </div>
       </nav>

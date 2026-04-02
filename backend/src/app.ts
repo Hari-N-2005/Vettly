@@ -5,8 +5,13 @@ import dotenv from 'dotenv'
 import multer from 'multer'
 import pdfParse from 'pdf-parse'
 import crypto from 'crypto'
+import { PrismaClient } from '@prisma/client'
+import authRouter from './routes/auth'
+import { authMiddleware, AuthRequest } from './middleware/authMiddleware'
 
 dotenv.config()
+
+const prisma = new PrismaClient()
 
 const app: Express = express()
 
@@ -2038,6 +2043,7 @@ app.post('/api/scan-risks', async (req: Request, res: Response) => {
 
 // API Routes (to be implemented)
 // Import routes here as they're created:
+app.use('/api/auth', authRouter)
 // app.use('/api/rfp', rfpRoutes)
 // app.use('/api/compliance', complianceRoutes)
 // app.use('/api/risks', riskRoutes)
