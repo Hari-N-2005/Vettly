@@ -1,9 +1,11 @@
-import { ChangeEvent, useState } from 'react'
+import { ChangeEvent, useEffect, useState } from 'react'
 import DocumentDropZone from './DocumentDropZone'
 import FilePreview from './FilePreview'
 import Button from '@/components/common/Button'
 import { ExtractRequirementsResponse, UploadState } from '@/types'
 import { extractRequirements, uploadRFPForExtraction } from '@/services/rfpService'
+import SimulatedProgressBar from '@/components/common/SimulatedProgressBar'
+import { useSimulatedProgress } from '@/hooks/useSimulatedProgress'
 
 interface RFPUploadFormProps {
   onRequirementsExtracted?: (
@@ -25,6 +27,26 @@ export default function RFPUploadForm({ onRequirementsExtracted }: RFPUploadForm
   const [formErrors, setFormErrors] = useState<{ projectName?: string }>({})
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
+  const { progress, complete, reset } = useSimulatedProgress({
+    isActive: uploadState.isUploading,
+    totalDurationMs: 21000,
+  })
+
+  useEffect(() => {
+    if (uploadState.isUploading) {
+      return
+    }
+
+    if (statusMessage && statusMessage.startsWith('Extracted')) {
+      complete()
+      const hideTimer = window.setTimeout(() => reset(), 1200)
+      return () => window.clearTimeout(hideTimer)
+    }
+
+    if (statusError) {
+      reset()
+    }
+  }, [complete, reset, statusError, statusMessage, uploadState.isUploading])
 
   const handleFileSelect = (file: File) => {
     setUploadState(prev => ({
@@ -89,6 +111,7 @@ export default function RFPUploadForm({ onRequirementsExtracted }: RFPUploadForm
         ...prev,
         isUploading: false,
       }))
+      complete()
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Failed to extract requirements from this RFP.'
@@ -99,6 +122,7 @@ export default function RFPUploadForm({ onRequirementsExtracted }: RFPUploadForm
       }))
       setStatusMessage(null)
       setStatusError(errorMessage)
+      reset()
     }
   }
 
@@ -110,6 +134,14 @@ export default function RFPUploadForm({ onRequirementsExtracted }: RFPUploadForm
       </p>
 
       <div className="space-y-6">
+        {uploadState.isUploading && (
+          <SimulatedProgressBar
+            progress={progress}
+            label="Extracting requirements"
+            helperText="This is an estimated progress indicator while Gemini processes the PDF."
+          />
+        )}
+
         {/* Project Name Input */}
         <div>
           <label htmlFor="projectName" className="block text-sm font-semibold text-gray-200 mb-2">

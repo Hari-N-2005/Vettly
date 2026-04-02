@@ -1,12 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import RFPUploadForm from '@/components/upload/RFPUploadForm'
 import RecentProjectsList from '@/components/rfp/RecentProjectsList'
 import RequirementChecklist from '@/components/requirements/RequirementChecklist'
 import ComplianceDeepDive from '@/components/compliance/ComplianceDeepDive'
 import RiskFlagPanel from '@/components/risks/RiskFlagPanel'
+import SimulatedProgressBar from '@/components/common/SimulatedProgressBar'
 import { validateVendorProposal } from '@/services/proposalService'
 import { uploadRFPForExtraction } from '@/services/rfpService'
 import { scanVendorRisks } from '@/services/riskService'
+import { useSimulatedProgress } from '@/hooks/useSimulatedProgress'
 import {
   ComplianceResult,
   ExtractRequirementsResponse,
@@ -65,6 +67,14 @@ export default function Home() {
   const [riskScanError, setRiskScanError] = useState<string | null>(null)
   const [riskScanResult, setRiskScanResult] = useState<RiskScanResponse | null>(null)
   const [activeComplianceResult, setActiveComplianceResult] = useState<ComplianceResult | null>(null)
+  const {
+    progress: validationProgress,
+    complete: completeValidationProgress,
+    reset: resetValidationProgress,
+  } = useSimulatedProgress({
+    isActive: isValidatingVendor,
+    totalDurationMs: 21000,
+  })
   const [extractionMeta, setExtractionMeta] = useState<{
     projectName: string
     extractedAt: string
@@ -127,13 +137,24 @@ export default function Home() {
       setRiskScanError(null)
       setRiskScanResult(null)
       setActiveComplianceResult(null)
+      completeValidationProgress()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to validate vendor proposal.'
       setValidationError(message)
+      resetValidationProgress()
     } finally {
       setIsValidatingVendor(false)
     }
   }
+
+  useEffect(() => {
+    if (!isValidatingVendor && validationResult) {
+      const timerId = window.setTimeout(() => resetValidationProgress(), 1200)
+      return () => window.clearTimeout(timerId)
+    }
+
+    return undefined
+  }, [isValidatingVendor, resetValidationProgress, validationResult])
 
   const handleScanRisks = async () => {
     if (!vendorProposalFile) {
@@ -271,6 +292,16 @@ export default function Home() {
                 <p className="text-sm text-gray-400 mt-1">
                   Validate one vendor proposal against {confirmedRequirements.length} confirmed requirement{confirmedRequirements.length === 1 ? '' : 's'}.
                 </p>
+
+                {isValidatingVendor && (
+                  <div className="mt-4">
+                    <SimulatedProgressBar
+                      progress={validationProgress}
+                      label="Validating vendor proposal"
+                      helperText="Estimated progress while Gemini matches the proposal against all selected requirements."
+                    />
+                  </div>
+                )}
 
                 <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
