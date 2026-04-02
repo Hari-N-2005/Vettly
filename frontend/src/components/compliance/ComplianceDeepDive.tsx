@@ -1,10 +1,15 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ComplianceResult } from '@/types'
 
 interface ComplianceDeepDiveProps {
   isOpen: boolean
   result: ComplianceResult | null
   requirementText: string
+  categoryRequirementResults?: Array<{
+    requirementId: string
+    requirementText: string
+    result: ComplianceResult
+  }>
   onClose: () => void
   onFlagForReview?: (payload: { requirementId: string; note: string }) => void
 }
@@ -19,19 +24,46 @@ export default function ComplianceDeepDive({
   isOpen,
   result,
   requirementText,
+  categoryRequirementResults,
   onClose,
   onFlagForReview,
 }: ComplianceDeepDiveProps) {
   const [manualNote, setManualNote] = useState('')
+  const [selectedRequirementId, setSelectedRequirementId] = useState<string | null>(null)
 
-  const confidenceValue = useMemo(() => {
-    if (!result) return 0
-    return Math.max(0, Math.min(100, Math.round(result.confidenceScore)))
-  }, [result])
+  const selectedCategoryRequirement = useMemo(() => {
+    if (!Array.isArray(categoryRequirementResults) || categoryRequirementResults.length === 0) {
+      return null
+    }
+
+    return (
+      categoryRequirementResults.find(item => item.requirementId === selectedRequirementId) ??
+      categoryRequirementResults[0]
+    )
+  }, [categoryRequirementResults, selectedRequirementId])
+
+  const displayedResult = selectedCategoryRequirement?.result ?? result
+  const displayedRequirementText = selectedCategoryRequirement?.requirementText || requirementText
+
+  useEffect(() => {
+    if (categoryRequirementResults?.length && !selectedRequirementId) {
+      setSelectedRequirementId(categoryRequirementResults[0].requirementId)
+    }
+    if (categoryRequirementResults?.length && selectedRequirementId) {
+      const stillExists = categoryRequirementResults.some(item => item.requirementId === selectedRequirementId)
+      if (!stillExists) {
+        setSelectedRequirementId(categoryRequirementResults[0].requirementId)
+      }
+    }
+    if (!categoryRequirementResults?.length && selectedRequirementId) {
+      setSelectedRequirementId(null)
+    }
+  }, [categoryRequirementResults, selectedRequirementId])
 
   const gauge = useMemo(() => {
     const radius = 54
     const circumference = 2 * Math.PI * radius
+    const confidenceValue = displayedResult ? Math.max(0, Math.min(100, Math.round(displayedResult.confidenceScore))) : 0
     const dashOffset = circumference - (confidenceValue / 100) * circumference
 
     return {
@@ -39,11 +71,11 @@ export default function ComplianceDeepDive({
       circumference,
       dashOffset,
     }
-  }, [confidenceValue])
+  }, [displayedResult])
 
   const handleFlagForReview = () => {
-    if (!result) return
-    onFlagForReview?.({ requirementId: result.requirementId, note: manualNote.trim() })
+    if (!displayedResult) return
+    onFlagForReview?.({ requirementId: displayedResult.requirementId, note: manualNote.trim() })
   }
 
   return (
@@ -72,15 +104,15 @@ export default function ComplianceDeepDive({
           <div className="px-6 py-5 border-b border-legal-blue/20 flex items-start justify-between gap-4">
             <div>
               <p className="text-xs uppercase tracking-wide text-gray-400">Compliance Deep Dive</p>
-              <h2 className="text-xl font-bold text-gray-100 mt-1">Requirement {result?.requirementId || '--'}</h2>
+              <h2 className="text-xl font-bold text-gray-100 mt-1">Requirement {displayedResult?.requirementId || '--'}</h2>
             </div>
             <div className="flex items-center gap-3">
               <span
                 className={`inline-flex px-3 py-1.5 rounded-full text-xs border ${
-                  result ? statusBadgeStyles[result.status] : 'bg-slate-500/20 text-slate-300 border-slate-400/30'
+                  displayedResult ? statusBadgeStyles[displayedResult.status] : 'bg-slate-500/20 text-slate-300 border-slate-400/30'
                 }`}
               >
-                {result?.status || 'Unknown'}
+                {displayedResult?.status || 'Unknown'}
               </span>
               <button
                 type="button"
@@ -96,14 +128,16 @@ export default function ComplianceDeepDive({
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
               <section className="rounded-xl border border-legal-blue/30 bg-legal-slate/40 p-4">
                 <h3 className="text-sm font-semibold text-gray-200 mb-2">Original Requirement</h3>
-                <p className="text-sm text-gray-300 whitespace-pre-wrap">{requirementText || 'No requirement text available.'}</p>
+                <p className="text-sm text-gray-300 whitespace-pre-wrap">
+                  {displayedRequirementText || 'No requirement text available.'}
+                </p>
               </section>
 
               <section className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-4">
                 <h3 className="text-sm font-semibold text-emerald-200 mb-2">Matched Vendor Excerpt</h3>
-                {result?.matchedExcerpt ? (
+                {displayedResult?.matchedExcerpt ? (
                   <p className="text-sm text-emerald-100 whitespace-pre-wrap">
-                    <span className="bg-emerald-400/20 rounded px-1 py-0.5">{result.matchedExcerpt}</span>
+                    <span className="bg-emerald-400/20 rounded px-1 py-0.5">{displayedResult.matchedExcerpt}</span>
                   </p>
                 ) : (
                   <p className="text-sm text-gray-400">No matching excerpt found.</p>
@@ -138,7 +172,9 @@ export default function ComplianceDeepDive({
                   </svg>
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="text-center">
-                      <p className="text-2xl font-bold text-gray-100">{confidenceValue}</p>
+                      <p className="text-2xl font-bold text-gray-100">
+                        {displayedResult ? Math.max(0, Math.min(100, Math.round(displayedResult.confidenceScore))) : 0}
+                      </p>
                       <p className="text-xs text-gray-400">/ 100</p>
                     </div>
                   </div>
@@ -152,13 +188,45 @@ export default function ComplianceDeepDive({
 
             <section className="rounded-xl border border-legal-blue/30 bg-legal-slate/40 p-4">
               <h3 className="text-sm font-semibold text-gray-200 mb-2">AI Explanation</h3>
-              <p className="text-sm text-gray-300 whitespace-pre-wrap">{result?.explanation || 'No explanation returned.'}</p>
-              {result?.suggestedFollowUp && (
+              <p className="text-sm text-gray-300 whitespace-pre-wrap">{displayedResult?.explanation || 'No explanation returned.'}</p>
+              {displayedResult?.suggestedFollowUp && (
                 <p className="mt-3 text-sm text-amber-200 bg-amber-950/30 border border-amber-700/30 rounded-lg px-3 py-2">
-                  Suggested follow-up: {result.suggestedFollowUp}
+                  Suggested follow-up: {displayedResult.suggestedFollowUp}
                 </p>
               )}
             </section>
+
+            {Array.isArray(categoryRequirementResults) && categoryRequirementResults.length > 0 && (
+              <section className="rounded-xl border border-legal-blue/30 bg-legal-slate/40 p-4">
+                <h3 className="text-sm font-semibold text-gray-200 mb-3">All Requirements in This Category</h3>
+                <div className="space-y-3">
+                  {categoryRequirementResults.map(item => (
+                    <button
+                      key={item.requirementId}
+                      type="button"
+                      onClick={() => setSelectedRequirementId(item.requirementId)}
+                      className={`w-full text-left rounded-lg border p-3 transition-colors ${
+                        selectedRequirementId === item.requirementId
+                          ? 'border-legal-accent bg-legal-accent/10'
+                          : 'border-legal-blue/20 bg-legal-dark/50 hover:bg-legal-dark/70'
+                      }`}
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <p className="text-sm font-medium text-gray-100">{item.requirementText}</p>
+                        <span
+                          className={`inline-flex w-fit px-2.5 py-1 rounded-full text-[11px] border ${statusBadgeStyles[item.result.status]}`}
+                        >
+                          {item.result.status}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-gray-400">
+                        Requirement ID: {item.requirementId} | Confidence: {item.result.confidenceScore}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section className="rounded-xl border border-legal-blue/30 bg-legal-slate/40 p-4">
               <h3 className="text-sm font-semibold text-gray-200 mb-2">Manual Review Note</h3>

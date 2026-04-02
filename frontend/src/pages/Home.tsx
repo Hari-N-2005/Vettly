@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { useProjectStore } from '../stores/projectStore'
-import { RequirementCategory } from '@/types'
+import { ComplianceStatus, RequirementCategory } from '@/types'
 import { validateVendorProposal } from '../services/proposalService'
 import { uploadRFPForExtraction } from '../services/rfpService'
 import { scanVendorRisks } from '../services/riskService'
@@ -10,9 +10,10 @@ import { scanVendorRisks } from '../services/riskService'
 import RFPUploadForm from '../components/upload/RFPUploadForm'
 import RequirementChecklist from '../components/requirements/RequirementChecklist'
 import RiskFlagPanel from '../components/risks/RiskFlagPanel'
-import ComplianceDeepDive from '../components/compliance/ComplianceDeepDive'
+import RiskHeatmap from '../components/risks/RiskHeatmap'
 import SimulatedProgressBar from '../components/common/SimulatedProgressBar'
 import RecentProjectsList from '../components/rfp/RecentProjectsList'
+import VendorComparisonTable, { VendorComparisonVendor } from '../components/proposals/VendorComparisonTable'
 import { useSimulatedProgress } from '@/hooks/useSimulatedProgress'
 
 const normalizeCategory = (category?: string): RequirementCategory => {
@@ -41,7 +42,6 @@ export default function Home() {
   const [riskScanError, setRiskScanError] = useState<string>('')
   const [isScanningRisks, setIsScanningRisks] = useState(false)
   const [hasScannedRisks, setHasScannedRisks] = useState(false)
-  const [activeComplianceResult, setActiveComplianceResult] = useState<any>(null)
   const [isSavingProject, setIsSavingProject] = useState(false)
   const [saveProjectError, setSaveProjectError] = useState<string>('')
   const [projectName, setProjectName] = useState('')
@@ -103,6 +103,146 @@ export default function Home() {
 
     return undefined
   }, [isValidatingVendor, resetValidationProgress, validationResult])
+
+  const comparisonCategories = useMemo(() => {
+    const uniqueCategories = new Set<string>()
+    confirmedRequirements.forEach((req: any) => {
+      uniqueCategories.add(normalizeCategory(req.category))
+    })
+    return Array.from(uniqueCategories)
+  }, [confirmedRequirements])
+
+  const comparisonVendors = useMemo<VendorComparisonVendor[]>(() => {
+    if (!validationResult) {
+      return []
+    }
+
+    const resultsByRequirement = new Map<string, any>()
+    validationResult.complianceResults.forEach((result: any) => {
+      resultsByRequirement.set(result.requirementId, result)
+    })
+
+    const categoryStatuses: VendorComparisonVendor['categoryStatuses'] = {}
+
+    const categoryBuckets = new Map<
+      string,
+      Array<{
+        requirement: any
+        result: any
+      }>
+    >()
+
+    confirmedRequirements.forEach((requirement: any) => {
+      const category = normalizeCategory(requirement.category)
+      const matchedResult = resultsByRequirement.get(requirement.id)
+
+      const bucket = categoryBuckets.get(category) ?? []
+      bucket.push({ requirement, result: matchedResult })
+      categoryBuckets.set(category, bucket)
+    })
+
+    categoryBuckets.forEach((entries, category) => {
+      const metCount = entries.filter(entry => entry.result?.status === 'Met').length
+      const partialCount = entries.filter(entry => entry.result?.status === 'Partially Met').length
+      const missingCount = entries.filter(entry => !entry.result || entry.result.status === 'Missing').length
+
+      let status: ComplianceStatus = 'Missing'
+      if (metCount === entries.length) {
+        status = 'Met'
+      } else if (missingCount === 0 && partialCount > 0) {
+        status = 'Partially Met'
+      } else if (metCount > 0 || partialCount > 0) {
+        status = 'Partially Met'
+      }
+
+      const representativeEntry =
+        entries.find(entry => entry.result?.status === 'Met') ||
+        entries.find(entry => entry.result?.status === 'Partially Met') ||
+        entries[0]
+
+      const representativeResult = representativeEntry.result ?? {
+        requirementId: representativeEntry.requirement.id,
+        status: 'Missing' as ComplianceStatus,
+        confidenceScore: 0,
+        matchedExcerpt: null,
+        explanation: 'No detailed explanation returned.',
+      }
+
+      categoryStatuses[category] = {
+        status,
+        deepDive: {
+          result: representativeResult,
+          requirementText: representativeEntry.requirement.requirementText,
+          categoryRequirementResults: entries.map(entry => ({
+            requirementId: entry.requirement.id,
+            requirementText: entry.requirement.requirementText,
+            result:
+              entry.result ?? {
+                requirementId: entry.requirement.id,
+                status: 'Missing' as ComplianceStatus,
+                confidenceScore: 0,
+                matchedExcerpt: null,
+                explanation: 'No detailed explanation returned.',
+              },
+          })),
+        },
+      }
+    })
+
+    const riskSummary = riskScanResult?.riskSummary ?? { high: 0, medium: 0, low: 0 }
+
+    return [
+      {
+        vendorId: validationResult.vendorName || 'current-vendor',
+        vendorName: validationResult.vendorName || 'Current Vendor',
+        complianceScore: validationResult.overallScore ?? 0,
+        metCount: validationResult.metCount ?? 0,
+        partialCount: validationResult.partialCount ?? 0,
+        missingCount: validationResult.missingCount ?? 0,
+        risks: {
+          total: riskScanResult?.riskFlags?.length ?? 0,
+          high: riskSummary.high,
+          medium: riskSummary.medium,
+          low: riskSummary.low,
+        },
+        categoryStatuses,
+      },
+    ]
+  }, [confirmedRequirements, riskScanResult, validationResult])
+
+  const riskHeatmapVendors = useMemo(() => {
+    if (!riskScanResult) {
+      return []
+    }
+
+    return [riskScanResult.vendorName || validationResult?.vendorName || vendorName || 'Current Vendor']
+  }, [riskScanResult, validationResult, vendorName])
+
+  const riskHeatmapMatrix = useMemo(() => {
+    if (!riskScanResult || riskHeatmapVendors.length === 0) {
+      return {}
+    }
+
+    const vendorKey = riskHeatmapVendors[0]
+    const baseRow = {
+      Liability: 0,
+      'Cost Escalation': 0,
+      'Vague Commitment': 0,
+      'Approval Dependency': 0,
+      'Scope Creep': 0,
+    }
+
+    const nextRow = { ...baseRow }
+    riskScanResult.riskFlags?.forEach((flag: any) => {
+      if (flag?.riskType in nextRow) {
+        nextRow[flag.riskType as keyof typeof nextRow] += 1
+      }
+    })
+
+    return {
+      [vendorKey]: nextRow,
+    }
+  }, [riskHeatmapVendors, riskScanResult])
 
   const handleRequirementsExtracted = (payload: any, _file?: File) => {
     const requirements = payload.requirements || payload
@@ -240,15 +380,6 @@ export default function Home() {
     } finally {
       setIsScanningRisks(false)
     }
-  }
-
-  const getRequirementTextById = (requirementId: string): string => {
-    if (currentProject) {
-      const req = currentProject.requirements.find((r: any) => r.id === requirementId)
-      return req ? req.text : ''
-    }
-    const req = confirmedRequirements.find((r: any) => r.id === requirementId)
-    return req ? req.text : ''
   }
 
   return (
@@ -541,77 +672,26 @@ export default function Home() {
 
                     {validationResult && (
                       <div className="mt-6">
-                        <div className="mb-6">
-                          <h4 className="text-base font-semibold text-gray-100 mb-4">Validation Summary</h4>
-                          <div className="grid grid-cols-3 gap-4">
-                            <div className="rounded-lg bg-legal-dark/70 border border-emerald-500/30 p-3">
-                              <p className="text-xs text-gray-400">Met</p>
-                              <p className="text-xl text-emerald-300 font-bold mt-1">{validationResult.metCount}</p>
-                            </div>
-                            <div className="rounded-lg bg-legal-dark/70 border border-amber-500/30 p-3">
-                              <p className="text-xs text-gray-400">Partially Met</p>
-                              <p className="text-xl text-amber-300 font-bold mt-1">{validationResult.partialCount}</p>
-                            </div>
-                            <div className="rounded-lg bg-legal-dark/70 border border-rose-500/30 p-3">
-                              <p className="text-xs text-gray-400">Missing</p>
-                              <p className="text-xl text-rose-300 font-bold mt-1">{validationResult.missingCount}</p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 rounded-lg border border-legal-blue/30 overflow-hidden">
-                          <table className="w-full text-sm">
-                            <thead className="bg-legal-dark/80">
-                              <tr>
-                                <th className="text-left px-4 py-3 text-xs uppercase text-gray-400 font-semibold">
-                                  Requirement
-                                </th>
-                                <th className="text-left px-4 py-3 text-xs uppercase text-gray-400 font-semibold">Status</th>
-                                <th className="text-left px-4 py-3 text-xs uppercase text-gray-400 font-semibold">
-                                  Confidence
-                                </th>
-                                <th className="text-left px-4 py-3 text-xs uppercase text-gray-400 font-semibold">Action</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {validationResult.complianceResults.map((result: any) => (
-                                <tr key={result.requirementId} className="border-t border-legal-blue/20">
-                                  <td className="px-4 py-3 text-gray-200">
-                                    {getRequirementTextById(result.requirementId) || result.requirementId}
-                                  </td>
-                                  <td className="px-4 py-3">
-                                    <span
-                                      className={`inline-flex px-2.5 py-1 rounded-full text-xs border ${
-                                        result.status === 'Met'
-                                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
-                                          : result.status === 'Partially Met'
-                                            ? 'bg-amber-500/20 text-amber-300 border-amber-400/30'
-                                            : 'bg-rose-500/20 text-rose-300 border-rose-400/30'
-                                      }`}
-                                    >
-                                      {result.status}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3 text-gray-300">{result.confidenceScore}</td>
-                                  <td className="px-4 py-3">
-                                    <button
-                                      type="button"
-                                      onClick={() => setActiveComplianceResult(result)}
-                                      className="text-sm font-medium text-legal-accent hover:text-legal-gold"
-                                    >
-                                      View
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                        <VendorComparisonTable
+                          vendors={comparisonVendors}
+                          categories={comparisonCategories}
+                          onFlagForReview={({ vendorName: flaggedVendorName, category, requirementId, note }) => {
+                            console.log('Flagged for review:', {
+                              vendor: flaggedVendorName,
+                              category,
+                              requirementId,
+                              note,
+                            })
+                            alert(`Flagged ${requirementId} (${category}) for review.`)
+                          }}
+                        />
                       </div>
                     )}
 
                     {riskScanResult && (
                       <div className="mt-6">
+                        <RiskHeatmap vendors={riskHeatmapVendors} riskMatrix={riskHeatmapMatrix} />
+
                         <RiskFlagPanel
                           vendorName={riskScanResult.vendorName}
                           riskFlags={riskScanResult.riskFlags}
@@ -643,16 +723,6 @@ export default function Home() {
         </footer>
       </main>
 
-      <ComplianceDeepDive
-        isOpen={Boolean(activeComplianceResult)}
-        result={activeComplianceResult}
-        requirementText={activeComplianceResult ? getRequirementTextById(activeComplianceResult.requirementId) : ''}
-        onClose={() => setActiveComplianceResult(null)}
-        onFlagForReview={({ requirementId, note }: any) => {
-          console.log('Flagged for review:', { requirementId, note })
-          alert(`Flagged ${requirementId} for review.`)
-        }}
-      />
     </div>
   )
 }

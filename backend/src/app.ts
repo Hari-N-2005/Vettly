@@ -5,6 +5,9 @@ import dotenv from 'dotenv'
 import multer from 'multer'
 import pdfParse from 'pdf-parse'
 import crypto from 'crypto'
+import fs from 'fs'
+import path from 'path'
+import PDFDocument from 'pdfkit'
 import { PrismaClient } from '@prisma/client'
 import authRouter from './routes/auth'
 import projectsRouter from './routes/projects'
@@ -95,6 +98,266 @@ interface RiskScanResponse {
   overallToneScore: number
   scannedAt: string
   note?: string
+}
+
+interface GenerateReportRequirement {
+  id: string
+  requirementText: string
+  category?: string
+}
+
+interface GenerateReportVendorResult {
+  vendorName: string
+  overallScore?: number
+  metCount?: number
+  partialCount?: number
+  missingCount?: number
+  complianceResults: ComplianceResult[]
+}
+
+interface GenerateReportInput {
+  projectName: string
+  user: string
+  generatedAt: Date
+  requirements: GenerateReportRequirement[]
+  vendorResults: GenerateReportVendorResult[]
+  riskFlagsPerVendor: Record<string, RiskFlag[]>
+}
+
+type FinalRecommendation = 'Recommend' | 'Review' | 'Reject'
+
+const reportsDirectoryPath = path.resolve(process.cwd(), 'reports')
+fs.mkdirSync(reportsDirectoryPath, { recursive: true })
+
+const csvEscape = (value: unknown): string => {
+  const normalized = String(value ?? '')
+  return `"${normalized.replace(/"/g, '""')}"`
+}
+
+const getRiskFlagsForVendor = (
+  riskFlagsPerVendor: Record<string, RiskFlag[]>,
+  vendorName: string
+): RiskFlag[] => {
+  if (Array.isArray(riskFlagsPerVendor[vendorName])) {
+    return riskFlagsPerVendor[vendorName]
+  }
+
+  const matchedKey = Object.keys(riskFlagsPerVendor).find(
+    key => key.toLowerCase() === vendorName.toLowerCase()
+  )
+
+  return matchedKey ? riskFlagsPerVendor[matchedKey] : []
+}
+
+const calculateRecommendation = (
+  overallScore: number,
+  highRiskCount: number,
+  missingCount: number
+): FinalRecommendation => {
+  if (overallScore >= 80 && highRiskCount === 0 && missingCount <= 2) {
+    return 'Recommend'
+  }
+
+  if (overallScore >= 60 && highRiskCount <= 2) {
+    return 'Review'
+  }
+
+  return 'Reject'
+}
+
+const buildCsvRows = (input: GenerateReportInput): string[] => {
+  const header = [
+    'projectName',
+    'vendorName',
+    'requirementId',
+    'requirementText',
+    'category',
+    'status',
+    'confidenceScore',
+  ]
+
+  const rows = [header.map(csvEscape).join(',')]
+
+  input.vendorResults.forEach(vendor => {
+    const resultMap = new Map(vendor.complianceResults.map(result => [result.requirementId, result]))
+
+    input.requirements.forEach(requirement => {
+      const result = resultMap.get(requirement.id)
+
+      rows.push(
+        [
+          input.projectName,
+          vendor.vendorName,
+          requirement.id,
+          requirement.requirementText,
+          requirement.category ?? '',
+          result?.status ?? 'Missing',
+          result?.confidenceScore ?? 0,
+        ]
+          .map(csvEscape)
+          .join(',')
+      )
+    })
+  })
+
+  return rows
+}
+
+const writeCsvReport = async (input: GenerateReportInput, outputPath: string): Promise<void> => {
+  const rows = buildCsvRows(input)
+  await fs.promises.writeFile(outputPath, rows.join('\n'), 'utf8')
+}
+
+const addSummaryTableHeader = (doc: InstanceType<typeof PDFDocument>): number => {
+  const startY = doc.y
+  doc.fontSize(10).fillColor('#1f2937').text('Rank', 50, startY)
+  doc.text('Vendor', 95, startY)
+  doc.text('Score', 280, startY)
+  doc.text('Met/Part/Miss', 350, startY)
+  doc.text('Recommendation', 470, startY)
+  doc.moveDown(0.5)
+  doc.strokeColor('#cbd5e1').moveTo(50, doc.y).lineTo(560, doc.y).stroke()
+  return doc.y + 6
+}
+
+const addFinalRecommendationSection = (
+  doc: InstanceType<typeof PDFDocument>,
+  rankedVendors: Array<{
+    vendorName: string
+    overallScore: number
+    metCount: number
+    partialCount: number
+    missingCount: number
+    highRiskCount: number
+    recommendation: FinalRecommendation
+  }>
+): void => {
+  const topVendor = rankedVendors[0]
+  doc.addPage()
+  doc.fontSize(20).fillColor('#111827').text('Final Recommendation', { underline: true })
+  doc.moveDown(1)
+
+  if (!topVendor) {
+    doc.fontSize(12).fillColor('#374151').text('No vendor results were supplied.')
+    return
+  }
+
+  doc.fontSize(13).fillColor('#1f2937').text(`Top Ranked Vendor: ${topVendor.vendorName}`)
+  doc.moveDown(0.35)
+  doc.text(`Overall Score: ${topVendor.overallScore}%`)
+  doc.text(
+    `Compliance Breakdown: Met ${topVendor.metCount}, Partial ${topVendor.partialCount}, Missing ${topVendor.missingCount}`
+  )
+  doc.text(`High Severity Risks: ${topVendor.highRiskCount}`)
+  doc.moveDown(0.5)
+  doc.fontSize(15).fillColor('#111827').text(`Recommendation: ${topVendor.recommendation}`)
+}
+
+const writePdfReport = async (input: GenerateReportInput, outputPath: string): Promise<void> => {
+  await new Promise<void>((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 50, size: 'A4' })
+    const stream = fs.createWriteStream(outputPath)
+
+    stream.on('finish', resolve)
+    stream.on('error', reject)
+    doc.on('error', reject)
+
+    doc.pipe(stream)
+
+    // Cover page
+    doc.fontSize(26).fillColor('#111827').text('Tender Review Report', { align: 'center' })
+    doc.moveDown(1.25)
+    doc.fontSize(15).fillColor('#374151').text(`Project: ${input.projectName}`, { align: 'center' })
+    doc.moveDown(0.5)
+    doc.text(`Generated By: ${input.user}`, { align: 'center' })
+    doc.moveDown(0.5)
+    doc.text(`Date: ${input.generatedAt.toISOString()}`, { align: 'center' })
+
+    const rankedVendors = input.vendorResults
+      .map(vendor => {
+        const metCount =
+          typeof vendor.metCount === 'number'
+            ? vendor.metCount
+            : vendor.complianceResults.filter(result => result.status === 'Met').length
+        const partialCount =
+          typeof vendor.partialCount === 'number'
+            ? vendor.partialCount
+            : vendor.complianceResults.filter(result => result.status === 'Partially Met').length
+        const missingCount =
+          typeof vendor.missingCount === 'number'
+            ? vendor.missingCount
+            : vendor.complianceResults.filter(result => result.status === 'Missing').length
+
+        const total = metCount + partialCount + missingCount
+        const overallScore =
+          typeof vendor.overallScore === 'number'
+            ? vendor.overallScore
+            : total > 0
+              ? Math.round((metCount * 100 + partialCount * 50) / total)
+              : 0
+
+        const riskFlags = getRiskFlagsForVendor(input.riskFlagsPerVendor, vendor.vendorName)
+        const highRiskCount = riskFlags.filter(flag => flag.severity === 'High').length
+
+        return {
+          vendorName: vendor.vendorName,
+          overallScore,
+          metCount,
+          partialCount,
+          missingCount,
+          highRiskCount,
+          recommendation: calculateRecommendation(overallScore, highRiskCount, missingCount),
+          topRisks: riskFlags.slice(0, 3),
+        }
+      })
+      .sort((a, b) => b.overallScore - a.overallScore)
+
+    // Executive summary page
+    doc.addPage()
+    doc.fontSize(20).fillColor('#111827').text('Executive Summary', { underline: true })
+    doc.moveDown(0.75)
+
+    let rowY = addSummaryTableHeader(doc)
+    rankedVendors.forEach((vendor, index) => {
+      doc.fontSize(10).fillColor('#111827').text(String(index + 1), 50, rowY)
+      doc.text(vendor.vendorName, 95, rowY)
+      doc.text(`${vendor.overallScore}%`, 280, rowY)
+      doc.text(`${vendor.metCount}/${vendor.partialCount}/${vendor.missingCount}`, 350, rowY)
+      doc.text(vendor.recommendation, 470, rowY)
+      rowY += 18
+    })
+
+    // Per-vendor sections
+    rankedVendors.forEach(vendor => {
+      doc.addPage()
+      doc.fontSize(18).fillColor('#111827').text(`Vendor: ${vendor.vendorName}`)
+      doc.moveDown(0.65)
+      doc.fontSize(12).fillColor('#374151').text(`Overall Score: ${vendor.overallScore}%`)
+      doc.text(
+        `Compliance Breakdown: Met ${vendor.metCount}, Partially Met ${vendor.partialCount}, Missing ${vendor.missingCount}`
+      )
+      doc.text(`Recommendation: ${vendor.recommendation}`)
+      doc.moveDown(0.65)
+      doc.fontSize(13).fillColor('#111827').text('Top 3 Risks')
+      doc.moveDown(0.35)
+
+      if (vendor.topRisks.length === 0) {
+        doc.fontSize(11).fillColor('#374151').text('No risk flags available for this vendor.')
+      } else {
+        vendor.topRisks.forEach((risk, idx) => {
+          doc
+            .fontSize(11)
+            .fillColor('#1f2937')
+            .text(`${idx + 1}. [${risk.severity}] ${risk.riskType}: ${risk.flaggedText}`)
+          doc.fontSize(10).fillColor('#4b5563').text(`Impact: ${risk.impactSummary}`)
+          doc.moveDown(0.3)
+        })
+      }
+    })
+
+    addFinalRecommendationSection(doc, rankedVendors)
+    doc.end()
+  })
 }
 
 const REQUIREMENT_PRIORITIES: RequirementPriority[] = ['Critical', 'Standard']
@@ -1498,6 +1761,7 @@ app.use(helmet())
 app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }))
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ limit: '50mb', extended: true }))
+app.use('/reports', express.static(reportsDirectoryPath))
 
 // Request logging middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -2039,6 +2303,73 @@ app.post('/api/scan-risks', async (req: Request, res: Response) => {
       error: 'Failed to scan proposal risks.',
       details: message,
     })
+  }
+})
+
+app.post('/api/generate-report', async (req: Request, res: Response) => {
+  const body = req.body as Partial<{
+    projectName: string
+    user: string
+    generatedAt: string
+    requirements: GenerateReportRequirement[]
+    vendorResults: GenerateReportVendorResult[]
+    riskFlagsPerVendor: Record<string, RiskFlag[]>
+    riskFlagsByVendor: Record<string, RiskFlag[]>
+  }>
+
+  if (!body.projectName || typeof body.projectName !== 'string') {
+    res.status(400).json({ error: 'projectName is required and must be a string.' })
+    return
+  }
+
+  if (!Array.isArray(body.requirements) || body.requirements.length === 0) {
+    res.status(400).json({ error: 'requirements must be a non-empty array.' })
+    return
+  }
+
+  if (!Array.isArray(body.vendorResults) || body.vendorResults.length === 0) {
+    res.status(400).json({ error: 'vendorResults must be a non-empty array.' })
+    return
+  }
+
+  const reportInput: GenerateReportInput = {
+    projectName: body.projectName.trim(),
+    user: typeof body.user === 'string' && body.user.trim() ? body.user.trim() : 'Unknown User',
+    generatedAt: body.generatedAt ? new Date(body.generatedAt) : new Date(),
+    requirements: body.requirements,
+    vendorResults: body.vendorResults,
+    riskFlagsPerVendor: body.riskFlagsPerVendor ?? body.riskFlagsByVendor ?? {},
+  }
+
+  try {
+    await fs.promises.mkdir(reportsDirectoryPath, { recursive: true })
+
+    const uniqueId = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`
+    const csvFileName = `tender-review-${uniqueId}.csv`
+    const pdfFileName = `tender-review-${uniqueId}.pdf`
+    const csvPath = path.join(reportsDirectoryPath, csvFileName)
+    const pdfPath = path.join(reportsDirectoryPath, pdfFileName)
+
+    await writeCsvReport(reportInput, csvPath)
+    await writePdfReport(reportInput, pdfPath)
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`
+
+    res.status(201).json({
+      message: 'Report generated successfully.',
+      csv: {
+        fileName: csvFileName,
+        downloadUrl: `${baseUrl}/reports/${csvFileName}`,
+      },
+      pdf: {
+        fileName: pdfFileName,
+        downloadUrl: `${baseUrl}/reports/${pdfFileName}`,
+      },
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown report generation error.'
+    console.error('Failed to generate report:', error)
+    res.status(500).json({ error: 'Failed to generate report.', details: message })
   }
 })
 
