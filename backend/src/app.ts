@@ -4,7 +4,6 @@ import helmet from 'helmet'
 import dotenv from 'dotenv'
 import multer from 'multer'
 import pdfParse from 'pdf-parse'
-import pLimit from 'p-limit'
 import crypto from 'crypto'
 
 dotenv.config()
@@ -218,6 +217,47 @@ Field rules:
 - suggestedFollowUp:
   - Include only if status is Partially Met or Missing.
   - Omit this field when status is Met.
+- Return valid JSON only.`
+
+const BATCH_SEMANTIC_MATCHING_SYSTEM_PROMPT = `You are an expert bid-compliance semantic matching engine.
+Your task is to evaluate ALL requirements against the full vendor proposal text in a single pass and return strict JSON.
+
+Goal:
+Return only one valid JSON array. No markdown, no code fences, no commentary, no trailing text.
+
+Input:
+- requirements: array of objects with requirementIndex, requirementId, requirementText
+- proposalText: full vendor proposal text
+
+Rules:
+- Perform semantic matching, not only exact keyword matching.
+- Treat synonyms and equivalent phrasing as matches when intent is equivalent.
+- For each requirement, return exactly one result item.
+- Never omit any requirement from output.
+- Do not invent evidence.
+
+Status definitions:
+- Met: proposal clearly satisfies the full requirement.
+- Partially Met: proposal addresses only part of requirement or is ambiguous/incomplete.
+- Missing: no credible evidence found.
+
+Output schema (strict):
+[
+  {
+    "requirementIndex": 0,
+    "requirementId": "REQ-001",
+    "status": "Met | Partially Met | Missing",
+    "confidenceScore": 0,
+    "matchedExcerpt": "string or null",
+    "explanation": "1-2 sentences",
+    "suggestedFollowUp": "string (optional, only for Partially Met or Missing)"
+  }
+]
+
+Field rules:
+- confidenceScore must be integer 0-100.
+- matchedExcerpt must be null when status is Missing.
+- Omit suggestedFollowUp when status is Met.
 - Return valid JSON only.`
 
 const RISK_SCAN_SYSTEM_PROMPT = `You are an expert procurement risk analyst focused on hidden legal and commercial risk language in vendor proposals.
@@ -589,6 +629,103 @@ const parseAndValidateComplianceResult = (
   }
 
   return normalized
+}
+
+const parseAndValidateBatchComplianceResults = (
+  rawModelText: string,
+  requirements: ValidationRequirement[]
+): ComplianceResult[] => {
+  const jsonArrayText = tryExtractJSONArrayText(rawModelText)
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(jsonArrayText)
+  } catch {
+    throw new Error('Batch semantic match response is not valid JSON array.')
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error('Batch semantic match response must be a JSON array.')
+  }
+
+  const requirementIdSet = new Set(requirements.map(req => req.id))
+  const byRequirementId = new Map<string, ComplianceResult>()
+
+  for (const item of parsed) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      continue
+    }
+
+    const candidate = item as {
+      requirementId?: unknown
+      status?: unknown
+      confidenceScore?: unknown
+      matchedExcerpt?: unknown
+      explanation?: unknown
+      suggestedFollowUp?: unknown
+    }
+
+    const requirementId =
+      typeof candidate.requirementId === 'string' ? candidate.requirementId.trim() : ''
+
+    if (!requirementId || !requirementIdSet.has(requirementId) || !isComplianceStatus(candidate.status)) {
+      continue
+    }
+
+    const rawConfidence = candidate.confidenceScore
+    let normalizedConfidence = 0
+    if (typeof rawConfidence === 'number' && Number.isFinite(rawConfidence)) {
+      // Accept either 0-100 integers or 0-1 fractions from model output.
+      normalizedConfidence = rawConfidence <= 1 ? Math.round(rawConfidence * 100) : Math.round(rawConfidence)
+    }
+    normalizedConfidence = Math.max(0, Math.min(100, normalizedConfidence))
+
+    let matchedExcerpt: string | null = null
+    if (typeof candidate.matchedExcerpt === 'string' && candidate.matchedExcerpt.trim()) {
+      matchedExcerpt = candidate.matchedExcerpt.trim()
+    }
+    if (candidate.status === 'Missing') {
+      matchedExcerpt = null
+    }
+
+    const explanation =
+      typeof candidate.explanation === 'string' && candidate.explanation.trim()
+        ? candidate.explanation.trim()
+        : 'No detailed explanation returned by model.'
+
+    const suggestedFollowUp =
+      typeof candidate.suggestedFollowUp === 'string' && candidate.suggestedFollowUp.trim()
+        ? candidate.suggestedFollowUp.trim()
+        : undefined
+
+    byRequirementId.set(requirementId, {
+      requirementId,
+      status: candidate.status,
+      confidenceScore: normalizedConfidence,
+      matchedExcerpt,
+      explanation,
+      ...(candidate.status === 'Met' || !suggestedFollowUp ? {} : { suggestedFollowUp }),
+    })
+  }
+
+  // Ensure one result per input requirement, in original order.
+  return requirements.map(requirement => {
+    const found = byRequirementId.get(requirement.id)
+    if (found) {
+      return found
+    }
+
+    return {
+      requirementId: requirement.id,
+      status: 'Missing',
+      confidenceScore: 0,
+      matchedExcerpt: null,
+      explanation:
+        'Model did not return a result for this requirement in batch response; marked as Missing.',
+      suggestedFollowUp:
+        'Can you provide an explicit proposal statement showing compliance for this requirement?',
+    }
+  })
 }
 
 const MANDATORY_PHRASES = [
@@ -1518,12 +1655,11 @@ app.post('/api/extract-requirements', async (req: Request, res: Response) => {
 })
 
 /**
- * Validate a batch of requirements (up to 5) in a single Gemini API call.
- * This dramatically reduces API call count for large requirement sets.
- * E.g., 30 requirements = 6 API calls instead of 30.
+ * Validate all requirements in a single Gemini API call.
+ * This minimizes rate-limit risk during demos by avoiding per-requirement fan-out.
  */
 const callGeminiForBatchValidation = async (
-  batch: ValidationRequirement[],
+  requirements: ValidationRequirement[],
   proposalText: string
 ): Promise<ComplianceResult[]> => {
   const apiKey = process.env.GEMINI_API_KEY
@@ -1538,7 +1674,7 @@ const callGeminiForBatchValidation = async (
 
   for (const model of modelCandidates) {
     try {
-      return await callGeminiSemanticMatchBatchWithModel(model, apiKey, batch, proposalText)
+      return await callGeminiSemanticMatchBatchWithModel(model, apiKey, requirements, proposalText)
     } catch (error) {
       lastError = error
 
@@ -1566,35 +1702,23 @@ const callGeminiForBatchValidation = async (
 const callGeminiSemanticMatchBatchWithModel = async (
   model: string,
   apiKey: string,
-  batch: ValidationRequirement[],
+  requirements: ValidationRequirement[],
   proposalText: string
 ): Promise<ComplianceResult[]> => {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`
 
-  const batchPrompt = `Evaluate each requirement against the proposal text and return strict JSON array only.
+  const indexedRequirements = requirements.map((req, index) => ({
+    requirementIndex: index,
+    requirementId: req.id,
+    requirementText: req.requirementText,
+  }))
 
-Return JSON array in this exact format:
-[
-  {
-    "requirementId": "REQ-001",
-    "status": "Met|Partially Met|Missing",
-    "matchedExcerpt": "excerpt from proposal or null",
-    "confidenceScore": 0.95,
-    "explanation": "..."
-  },
-  ...
-]
-
-Requirements to evaluate:
-${batch.map(req => `- ${req.id}: ${req.requirementText}`).join('\n')}
-
-Proposal text:
-${proposalText}`
+  const batchPrompt = `Evaluate all requirements against proposalText and return strict JSON array only.\n\nrequirements = ${JSON.stringify(indexedRequirements)}\n\nproposalText = ${proposalText}`
 
   const payload = {
     system_instruction: {
       role: 'system',
-      parts: [{ text: SEMANTIC_MATCHING_SYSTEM_PROMPT }],
+      parts: [{ text: BATCH_SEMANTIC_MATCHING_SYSTEM_PROMPT }],
     },
     contents: [
       {
@@ -1652,27 +1776,7 @@ ${proposalText}`
       throw new Error('Gemini API response does not contain text output.')
     }
 
-    // Parse batch results
-    try {
-      const results = JSON.parse(textPart.text) as Array<{
-        requirementId: string
-        status: 'Met' | 'Partially Met' | 'Missing'
-        matchedExcerpt: string | null
-        confidenceScore: number
-        explanation: string
-      }>
-
-      // Map to ComplianceResult format
-      return results.map(result => ({
-        requirementId: result.requirementId,
-        status: result.status,
-        matchedExcerpt: result.matchedExcerpt,
-        confidenceScore: result.confidenceScore ?? 0.5,
-        explanation: result.explanation || '',
-      }))
-    } catch {
-      throw new Error('Failed to parse batch validation results from Gemini.')
-    }
+    return parseAndValidateBatchComplianceResults(textPart.text, requirements)
   }
 
   throw new Error('Gemini API request failed unexpectedly.')
@@ -1755,42 +1859,22 @@ app.post('/api/validate-vendor', (req: Request, res: Response) => {
       return
     }
 
-    // Process requirements in batches of 5 to reduce API calls from 30→6.
-    // E.g., 30 requirements = 6 API calls instead of 30.
-    const batchSize = 5
-    const batches: ValidationRequirement[][] = []
-    for (let i = 0; i < requirements.length; i += batchSize) {
-      batches.push(requirements.slice(i, i + batchSize))
-    }
+    let complianceResults: ComplianceResult[]
+    try {
+      complianceResults = await callGeminiForBatchValidation(requirements, proposalText)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown validation error'
 
-    // Process all batches concurrently (safe since each batch is <= 5 API calls).
-    const batchResults = await Promise.all(
-      batches.map(batch =>
-        (async () => {
-          try {
-            return await callGeminiForBatchValidation(batch, proposalText)
-          } catch (error) {
-            const message = error instanceof Error ? error.message : 'Unknown validation error'
+      if (message.includes('Rate limited')) {
+        console.warn('Gemini rate-limited for full validation batch; using semantic fallback.')
+      } else {
+        console.error('Failed to validate full requirement set in one call:', error)
+      }
 
-            if (message.includes('Rate limited')) {
-              console.warn(
-                `Gemini rate-limited for batch ${batch.map(r => r.id).join(', ')}; using semantic fallback.`
-              )
-            } else {
-              console.error(`Failed to validate batch:`, error)
-            }
-
-            // Fallback: use semantic fallback for each requirement in batch
-            return batch.map(requirement =>
-              fallbackSemanticMatch(requirement, proposalText, message)
-            )
-          }
-        })()
+      complianceResults = requirements.map(requirement =>
+        fallbackSemanticMatch(requirement, proposalText, message)
       )
-    )
-
-    // Flatten batch results into single array
-    const complianceResults = batchResults.flat()
+    }
 
     const metCount = complianceResults.filter(result => result.status === 'Met').length
     const partialCount = complianceResults.filter(result => result.status === 'Partially Met').length
