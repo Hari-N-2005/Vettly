@@ -80,50 +80,71 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Project name and requirements are required' })
     }
 
-    // Create project
-    const project = await prisma.project.create({
-      data: {
-        name,
-        description: description || null,
-        status: 'active',
-        userId: req.userId!,
-      },
+    const normalizedRequirements = requirements.map((item: any, index: number) => {
+      const requirementText = typeof item.requirementText === 'string' ? item.requirementText.trim() : typeof item.text === 'string' ? item.text.trim() : ''
+
+      if (!requirementText) {
+        throw new Error(`Requirement at index ${index} must include requirementText or text.`)
+      }
+
+      return {
+        text: requirementText,
+        category: typeof item.category === 'string' && item.category.trim() ? item.category.trim() : null,
+        priority: typeof item.priority === 'string' && item.priority.trim() ? item.priority.trim() : 'medium',
+        order: index,
+      }
     })
 
-    // Create RFP document record
-    const document = await prisma.rFPDocument.create({
-      data: {
-        filename: rfpFileName || 'uploaded.pdf',
-        fileSize: rfpFileSize || 0,
-        projectId: project.id,
-      },
-    })
+    const result = await prisma.$transaction(async tx => {
+      const project = await tx.project.create({
+        data: {
+          name,
+          description: description || null,
+          status: 'active',
+          userId: req.userId!,
+        },
+      })
 
-    // Create requirements
-    const createdRequirements = await Promise.all(
-      requirements.map((req: any, index: number) =>
-        prisma.extractedRequirement.create({
-          data: {
-            text: req.requirementText || req.text,
-            projectId: project.id,
-            documentId: document.id,
-            category: req.category || 'General',
-            priority: req.priority || 'medium',
-            order: index,
-          },
-        })
+      const document = await tx.rFPDocument.create({
+        data: {
+          filename: rfpFileName || 'uploaded.pdf',
+          fileSize: rfpFileSize || 0,
+          projectId: project.id,
+        },
+      })
+
+      const createdRequirements = await Promise.all(
+        normalizedRequirements.map((item, index) =>
+          tx.extractedRequirement.create({
+            data: {
+              text: item.text,
+              projectId: project.id,
+              documentId: document.id,
+              category: item.category,
+              priority: item.priority,
+              order: index,
+            },
+          })
+        )
       )
-    )
+
+      return {
+        project,
+        createdRequirements,
+      }
+    })
 
     res.status(201).json({
-      id: project.id,
-      name: project.name,
-      description: project.description,
-      requirementCount: createdRequirements.length,
-      createdAt: project.createdAt,
+      id: result.project.id,
+      name: result.project.name,
+      description: result.project.description,
+      requirementCount: result.createdRequirements.length,
+      createdAt: result.project.createdAt,
     })
   } catch (error: any) {
-    res.status(500).json({ error: error.message })
+    const message = error instanceof Error ? error.message : 'Unknown project creation error'
+    const status = message.includes('Requirement at index') ? 400 : 500
+    res.status(status).json({ error: message })
   }
 })
 

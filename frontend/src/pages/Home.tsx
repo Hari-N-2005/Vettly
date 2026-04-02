@@ -27,7 +27,7 @@ const normalizeCategory = (category?: string): RequirementCategory => {
 export default function Home() {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
-  const { projects, currentProject, fetchProjects, fetchProject, createProject, clearCurrentProject } = useProjectStore()
+  const { projects, currentProject, fetchProjects, fetchProject, createProject, deleteProject, clearCurrentProject } = useProjectStore()
 
   const [extractedRequirements, setExtractedRequirements] = useState<any[]>([])
   const [extractionMeta, setExtractionMeta] = useState<any>(null)
@@ -44,9 +44,12 @@ export default function Home() {
   const [hasScannedRisks, setHasScannedRisks] = useState(false)
   const [isSavingProject, setIsSavingProject] = useState(false)
   const [saveProjectError, setSaveProjectError] = useState<string>('')
+  const [deleteProjectError, setDeleteProjectError] = useState<string>('')
   const [projectName, setProjectName] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
   const [showSaveDialog, setShowSaveDialog] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [pendingDeleteProjectId, setPendingDeleteProjectId] = useState<string | null>(null)
   const {
     progress: validationProgress,
     complete: completeValidationProgress,
@@ -89,6 +92,9 @@ export default function Home() {
     })
     setShowSaveDialog(false)
     setSaveProjectError('')
+    setDeleteProjectError('')
+    setShowDeleteDialog(false)
+    setPendingDeleteProjectId(null)
     setValidationResult(null)
     setRiskScanResult(null)
     setValidationError('')
@@ -278,6 +284,46 @@ export default function Home() {
     await fetchProject(projectId)
   }
 
+  const handleRequestDeleteProject = (projectId: string) => {
+    setPendingDeleteProjectId(projectId)
+    setDeleteProjectError('')
+    setShowDeleteDialog(true)
+  }
+
+  const handleDeleteProject = async () => {
+    if (!pendingDeleteProjectId) {
+      return
+    }
+
+    try {
+      await deleteProject(pendingDeleteProjectId)
+
+      if (currentProject?.id === pendingDeleteProjectId) {
+        clearCurrentProject()
+        setExtractedRequirements([])
+        setExtractionMeta(null)
+        setConfirmedRequirements([])
+        setProjectName('')
+        setProjectDescription('')
+        setShowSaveDialog(false)
+        setValidationResult(null)
+        setRiskScanResult(null)
+        setValidationError('')
+        setRiskScanError('')
+        setHasValidatedVendor(false)
+        setHasScannedRisks(false)
+        setVendorProposalFile(null)
+        setVendorName('')
+      }
+
+      setShowDeleteDialog(false)
+      setPendingDeleteProjectId(null)
+      setDeleteProjectError('')
+    } catch (error: any) {
+      setDeleteProjectError(error.message || 'Failed to delete project.')
+    }
+  }
+
   const handleBackToProjects = () => {
     clearCurrentProject()
     setExtractedRequirements([])
@@ -464,7 +510,7 @@ export default function Home() {
                   <div className="text-3xl mb-3">🤖</div>
                   <h3 className="font-semibold text-gray-100 mb-2">AI-Powered</h3>
                   <p className="text-sm text-gray-400">
-                    Claude AI automatically extracts requirements and evaluates compliance
+                    AI will automatically extract requirements and evaluate compliance
                   </p>
                 </div>
 
@@ -711,8 +757,64 @@ export default function Home() {
 
             {/* Recent Projects Section */}
             <section>
-              {projects.length > 0 && <RecentProjectsList projects={projects.map(p => ({ ...p as any, vendorCount: p.proposalCount || 0 }))} onOpenProject={handleOpenProject} />}
+              {projects.length > 0 && (
+                <RecentProjectsList
+                  projects={projects.map(p => ({ ...p as any, vendorCount: p.proposalCount || 0 }))}
+                  onOpenProject={handleOpenProject}
+                  onDeleteProject={handleRequestDeleteProject}
+                />
+              )}
             </section>
+
+            {showDeleteDialog && pendingDeleteProjectId && (
+              <div className="fixed inset-0 z-[80] flex items-center justify-center px-4">
+                <div
+                  className="absolute inset-0 bg-black/60"
+                  onClick={() => {
+                    setShowDeleteDialog(false)
+                    setPendingDeleteProjectId(null)
+                    setDeleteProjectError('')
+                  }}
+                />
+                <div className="relative w-full max-w-lg rounded-2xl border border-rose-500/30 bg-legal-dark p-6 shadow-2xl">
+                  <p className="text-xs uppercase tracking-[0.2em] text-rose-300">Delete project</p>
+                  <h3 className="mt-2 text-xl font-bold text-gray-100">
+                    Remove this project from the database?
+                  </h3>
+                  <p className="mt-3 text-sm text-gray-300">
+                    This action permanently deletes the project, its uploaded document, and all saved requirements.
+                    It cannot be undone.
+                  </p>
+
+                  {deleteProjectError && (
+                    <p className="mt-4 rounded-lg border border-rose-500/40 bg-rose-950/40 px-3 py-2 text-sm text-rose-200">
+                      {deleteProjectError}
+                    </p>
+                  )}
+
+                  <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowDeleteDialog(false)
+                        setPendingDeleteProjectId(null)
+                        setDeleteProjectError('')
+                      }}
+                      className="rounded-lg border border-legal-blue/40 bg-legal-slate px-4 py-2.5 text-sm font-semibold text-gray-100 transition-colors hover:bg-legal-blue/20"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeleteProject}
+                      className="rounded-lg border border-rose-500/50 bg-rose-500/20 px-4 py-2.5 text-sm font-semibold text-rose-200 transition-colors hover:bg-rose-500/30"
+                    >
+                      Delete Project
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
         </>
 
         {/* Footer */}

@@ -4,11 +4,13 @@ import { Project } from '@/types'
 interface RecentProjectsListProps {
   projects: Project[]
   onOpenProject: (projectId: string) => void
+  onDeleteProject: (projectId: string) => void
 }
 
 export default function RecentProjectsList({
   projects,
   onOpenProject,
+  onDeleteProject,
 }: RecentProjectsListProps) {
   if (projects.length === 0) {
     return (
@@ -26,7 +28,7 @@ export default function RecentProjectsList({
       <h2 className="text-2xl font-bold text-gray-100 mb-6">Recent Projects</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {projects.map(project => (
-          <ProjectCard key={project.id} project={project} onOpen={onOpenProject} />
+          <ProjectCard key={project.id} project={project} onOpen={onOpenProject} onDelete={onDeleteProject} />
         ))}
       </div>
     </div>

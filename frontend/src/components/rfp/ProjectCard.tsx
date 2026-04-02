@@ -3,9 +3,10 @@ import { Project } from '@/types'
 interface ProjectCardProps {
   project: Project
   onOpen: (projectId: string) => void
+  onDelete: (projectId: string) => void
 }
 
-export default function ProjectCard({ project, onOpen }: ProjectCardProps) {
+export default function ProjectCard({ project, onOpen, onDelete }: ProjectCardProps) {
   const formatDate = (date: Date): string => {
     return new Intl.DateTimeFormat('en-US', {
       month: 'short',
@@ -56,12 +57,21 @@ export default function ProjectCard({ project, onOpen }: ProjectCardProps) {
         </div>
       </div>
 
-      <button
-        onClick={() => onOpen(project.id)}
-        className="w-full px-4 py-2.5 bg-legal-accent text-white rounded-lg hover:bg-legal-blue active:scale-95 transition-all duration-300 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-legal-accent focus:ring-offset-2 focus:ring-offset-legal-slate"
-      >
-        View Project
-      </button>
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          onClick={() => onOpen(project.id)}
+          className="w-full px-4 py-2.5 bg-legal-accent text-white rounded-lg hover:bg-legal-blue active:scale-95 transition-all duration-300 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-legal-accent focus:ring-offset-2 focus:ring-offset-legal-slate"
+        >
+          View Project
+        </button>
+
+        <button
+          onClick={() => onDelete(project.id)}
+          className="w-full px-4 py-2.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 rounded-lg hover:bg-rose-500/30 active:scale-95 transition-all duration-300 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-rose-400 focus:ring-offset-2 focus:ring-offset-legal-slate"
+        >
+          Delete
+        </button>
+      </div>
     </div>
   )
 }
