@@ -11,6 +11,7 @@ import PDFDocument from 'pdfkit'
 import { PrismaClient } from '@prisma/client'
 import authRouter from './routes/auth'
 import projectsRouter from './routes/projects'
+import proposalsRouter from './routes/proposals'
 import { authMiddleware, AuthRequest } from './middleware/authMiddleware'
 
 dotenv.config()
@@ -2377,10 +2378,10 @@ app.post('/api/generate-report', async (req: Request, res: Response) => {
 // Import routes here as they're created:
 app.use('/api/auth', authRouter)
 app.use('/api/projects', projectsRouter)
+app.use('/api/proposals', proposalsRouter)
 // app.use('/api/rfp', rfpRoutes)
 // app.use('/api/compliance', complianceRoutes)
 // app.use('/api/risks', riskRoutes)
-// app.use('/api/proposals', proposalRoutes)
 
 // 404 handler
 app.use((req: Request, res: Response) => {

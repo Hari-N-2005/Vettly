@@ -89,6 +89,8 @@ model VendorProposal {
   fileSize   Int
   uploadedAt DateTime   @default(now())
   proposalText String?
+  matchingCriteria Json?
+  requirementsSnapshot Json?
   
   // Validation metadata
   overallScore Int? // 0-100

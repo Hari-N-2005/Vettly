@@ -28,9 +28,27 @@ export interface ProjectDetail extends Project {
   proposals: Array<{
     id: string
     vendorName: string
-    createdAt: Date
+    uploadedAt: Date
     validatedAt?: Date
     overallScore?: number
+    metCount?: number
+    partialCount?: number
+    missingCount?: number
+    filename?: string
+    fileSize?: number
+    proposalText?: string
+    matchingCriteria?: unknown
+    requirementsSnapshot?: unknown
+    complianceResults?: Array<{
+      requirementId: string
+      status: 'Met' | 'Partially Met' | 'Missing'
+      confidence: number
+      matchedExcerpt?: string | null
+      explanation?: string | null
+      suggestedFollowUp?: string | null
+      flaggedForReview?: boolean
+      notes?: string | null
+    }>
   }>
 }
 

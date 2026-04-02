@@ -1,6 +1,18 @@
 import api from './api'
 import { Requirement, ValidateVendorResponse } from '@/types'
 
+export interface SavedVendorProposalResponse {
+  id: string
+  vendorName: string
+  filename: string
+  fileSize: number
+  validatedAt?: string
+  overallScore?: number
+  metCount?: number
+  partialCount?: number
+  missingCount?: number
+}
+
 export interface ProposalComparison {
   projectId: string
   vendors: Array<{
@@ -80,9 +92,45 @@ export const deleteProposal = async (projectId: string, vendorId: string): Promi
   await api.delete(`/proposals/${projectId}/${vendorId}`)
 }
 
+export const saveVendorProposal = async (
+  projectId: string,
+  vendorName: string,
+  proposalFile: File,
+  validationResult: ValidateVendorResponse,
+  matchingCriteria: Requirement[],
+  requirementsSnapshot: Array<{
+    id: string
+    text: string
+    category?: string
+    priority?: string
+    order?: number
+  }>
+): Promise<SavedVendorProposalResponse> => {
+  const formData = new FormData()
+  formData.append('file', proposalFile)
+  formData.append(
+    'payload',
+    JSON.stringify({
+      vendorName,
+      validationResult,
+      matchingCriteria,
+      requirementsSnapshot,
+    })
+  )
+
+  const response = await api.post(`/proposals/${projectId}/save`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
+
+  return response.data
+}
+
 export default {
   getProposalComparison,
   uploadProposal,
   validateVendorProposal,
+  saveVendorProposal,
   deleteProposal,
 }

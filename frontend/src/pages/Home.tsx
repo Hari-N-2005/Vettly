@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { useProjectStore } from '../stores/projectStore'
 import { ComplianceStatus, RequirementCategory } from '@/types'
-import { validateVendorProposal } from '../services/proposalService'
+import { saveVendorProposal, validateVendorProposal } from '../services/proposalService'
 import { uploadRFPForExtraction } from '../services/rfpService'
 import { scanVendorRisks } from '../services/riskService'
 
@@ -27,7 +27,16 @@ const normalizeCategory = (category?: string): RequirementCategory => {
 export default function Home() {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
-  const { projects, currentProject, fetchProjects, fetchProject, createProject, deleteProject, clearCurrentProject } = useProjectStore()
+  const {
+    projects,
+    currentProject,
+    fetchProjects,
+    fetchProject,
+    createProject,
+    deleteProject,
+    appendVendorProposal,
+    clearCurrentProject,
+  } = useProjectStore()
 
   const [extractedRequirements, setExtractedRequirements] = useState<any[]>([])
   const [extractionMeta, setExtractionMeta] = useState<any>(null)
@@ -44,7 +53,10 @@ export default function Home() {
   const [hasScannedRisks, setHasScannedRisks] = useState(false)
   const [isSavingProject, setIsSavingProject] = useState(false)
   const [saveProjectError, setSaveProjectError] = useState<string>('')
+  const [isSavingVendorDetails, setIsSavingVendorDetails] = useState(false)
+  const [saveVendorDetailsError, setSaveVendorDetailsError] = useState<string>('')
   const [deleteProjectError, setDeleteProjectError] = useState<string>('')
+  const [hasSavedVendorDetails, setHasSavedVendorDetails] = useState(false)
   const [projectName, setProjectName] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
   const [showSaveDialog, setShowSaveDialog] = useState(false)
@@ -92,9 +104,11 @@ export default function Home() {
     })
     setShowSaveDialog(false)
     setSaveProjectError('')
+    setSaveVendorDetailsError('')
     setDeleteProjectError('')
     setShowDeleteDialog(false)
     setPendingDeleteProjectId(null)
+    setHasSavedVendorDetails(false)
     setValidationResult(null)
     setRiskScanResult(null)
     setValidationError('')
@@ -262,6 +276,8 @@ export default function Home() {
     setRiskScanResult(null)
     setHasValidatedVendor(false)
     setHasScannedRisks(false)
+    setHasSavedVendorDetails(false)
+    setSaveVendorDetailsError('')
   }
 
   const handleConfirmRequirements = (selected: any[]) => {
@@ -278,6 +294,8 @@ export default function Home() {
     setRiskScanError('')
     setHasValidatedVendor(false)
     setHasScannedRisks(false)
+    setHasSavedVendorDetails(false)
+    setSaveVendorDetailsError('')
     setVendorProposalFile(null)
     setVendorName('')
     clearCurrentProject()
@@ -338,6 +356,8 @@ export default function Home() {
     setRiskScanError('')
     setHasValidatedVendor(false)
     setHasScannedRisks(false)
+    setHasSavedVendorDetails(false)
+    setSaveVendorDetailsError('')
     setVendorProposalFile(null)
     setVendorName('')
   }
@@ -379,6 +399,8 @@ export default function Home() {
 
     setIsValidatingVendor(true)
     setValidationError('')
+    setHasSavedVendorDetails(false)
+    setSaveVendorDetailsError('')
 
     try {
       const result = await validateVendorProposal(
@@ -425,6 +447,63 @@ export default function Home() {
       setHasScannedRisks(false)
     } finally {
       setIsScanningRisks(false)
+    }
+  }
+
+  const handleSaveVendorDetails = async () => {
+    if (!currentProject) {
+      setSaveVendorDetailsError('Save the project first before saving vendor details.')
+      return
+    }
+
+    if (!vendorProposalFile) {
+      setSaveVendorDetailsError('Please select a vendor proposal file.')
+      return
+    }
+
+    if (!validationResult) {
+      setSaveVendorDetailsError('Validate the vendor proposal before saving it.')
+      return
+    }
+
+    const resolvedVendorName = vendorName.trim() || validationResult.vendorName?.trim() || 'Unknown Vendor'
+    const requirementsSnapshot = currentProject.requirements.map((requirement: any) => ({
+      id: requirement.id,
+      text: requirement.text,
+      category: requirement.category,
+      priority: requirement.priority,
+      order: requirement.order,
+    }))
+
+    setIsSavingVendorDetails(true)
+    setSaveVendorDetailsError('')
+
+    try {
+      const response = await saveVendorProposal(
+        currentProject.id,
+        resolvedVendorName,
+        vendorProposalFile,
+        validationResult,
+        confirmedRequirements,
+        requirementsSnapshot
+      )
+
+      appendVendorProposal(currentProject.id, {
+        id: response.id,
+        vendorName: response.vendorName,
+        uploadedAt: new Date(),
+        validatedAt: response.validatedAt ? new Date(response.validatedAt) : new Date(),
+        overallScore: response.overallScore,
+        metCount: response.metCount,
+        partialCount: response.partialCount,
+        missingCount: response.missingCount,
+      })
+      setHasSavedVendorDetails(true)
+    } catch (error: any) {
+      setSaveVendorDetailsError(error.message || 'Failed to save vendor details.')
+      setHasSavedVendorDetails(false)
+    } finally {
+      setIsSavingVendorDetails(false)
     }
   }
 
@@ -650,6 +729,8 @@ export default function Home() {
                             setVendorName(event.target.value)
                             setHasValidatedVendor(false)
                             setHasScannedRisks(false)
+                            setHasSavedVendorDetails(false)
+                            setSaveVendorDetailsError('')
                             setValidationResult(null)
                             setRiskScanResult(null)
                           }}
@@ -672,6 +753,8 @@ export default function Home() {
                             setValidationError('')
                             setHasValidatedVendor(false)
                             setHasScannedRisks(false)
+                            setHasSavedVendorDetails(false)
+                            setSaveVendorDetailsError('')
                             setValidationResult(null)
                             setRiskScanResult(null)
                           }}
@@ -713,6 +796,43 @@ export default function Home() {
                     {riskScanError && (
                       <p className="mt-4 text-sm text-red-300 bg-red-950/40 border border-red-700/40 rounded-lg px-3 py-2">
                         {riskScanError}
+                      </p>
+                    )}
+
+                    {validationResult && (
+                      <div className="mt-6 rounded-xl border border-legal-blue/30 bg-legal-slate/50 p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <h4 className="text-lg font-semibold text-gray-100">Save vendor details</h4>
+                          <p className="text-sm text-gray-400 mt-1">
+                            Persist the vendor name, uploaded proposal, matching criteria, and all requirement results for
+                            comparison across vendors.
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleSaveVendorDetails}
+                          disabled={
+                            isSavingVendorDetails ||
+                            hasSavedVendorDetails ||
+                            !currentProject ||
+                            !vendorProposalFile ||
+                            !validationResult
+                          }
+                          className="rounded-lg bg-emerald-500/20 border border-emerald-500/40 px-4 py-2.5 text-sm font-semibold text-emerald-200 transition-colors hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isSavingVendorDetails
+                            ? 'Saving...'
+                            : hasSavedVendorDetails
+                              ? 'Saved to Comparison'
+                              : 'Save Vendor Details'}
+                        </button>
+                      </div>
+                    )}
+
+                    {saveVendorDetailsError && (
+                      <p className="mt-4 text-sm text-red-300 bg-red-950/40 border border-red-700/40 rounded-lg px-3 py-2">
+                        {saveVendorDetailsError}
                       </p>
                     )}
 

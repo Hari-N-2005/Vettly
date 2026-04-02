@@ -13,6 +13,16 @@ interface ProjectStore {
   createProject: (name: string, requirements: any[], description?: string, rfpFile?: File) => Promise<Project>
   updateProject: (projectId: string, data: Partial<Project>) => Promise<void>
   deleteProject: (projectId: string) => Promise<void>
+  appendVendorProposal: (projectId: string, proposal: {
+    id: string
+    vendorName: string
+    uploadedAt: Date
+    validatedAt?: Date
+    overallScore?: number
+    metCount?: number
+    partialCount?: number
+    missingCount?: number
+  }) => void
   clearCurrentProject: () => void
 }
 
@@ -87,6 +97,26 @@ export const useProjectStore = create<ProjectStore>((set) => ({
       set({ error: error.message })
       throw error
     }
+  },
+
+  appendVendorProposal: (projectId, proposal) => {
+    set((state) => ({
+      projects: state.projects.map(project =>
+        project.id === projectId
+          ? {
+              ...project,
+              proposalCount: (project.proposalCount || 0) + 1,
+            }
+          : project
+      ),
+      currentProject:
+        state.currentProject?.id === projectId
+          ? {
+              ...state.currentProject,
+              proposals: [proposal, ...state.currentProject.proposals],
+            }
+          : state.currentProject,
+    }))
   },
 
   clearCurrentProject: () => {
