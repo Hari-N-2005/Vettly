@@ -23,6 +23,7 @@ interface ProjectStore {
     partialCount?: number
     missingCount?: number
   }) => void
+  removeVendorProposal: (projectId: string, proposalId: string) => void
   clearCurrentProject: () => void
 }
 
@@ -114,6 +115,26 @@ export const useProjectStore = create<ProjectStore>((set) => ({
           ? {
               ...state.currentProject,
               proposals: [proposal, ...state.currentProject.proposals],
+            }
+          : state.currentProject,
+    }))
+  },
+
+  removeVendorProposal: (projectId, proposalId) => {
+    set((state) => ({
+      projects: state.projects.map(project =>
+        project.id === projectId
+          ? {
+              ...project,
+              proposalCount: Math.max(0, (project.proposalCount || 0) - 1),
+            }
+          : project
+      ),
+      currentProject:
+        state.currentProject?.id === projectId
+          ? {
+              ...state.currentProject,
+              proposals: state.currentProject.proposals.filter((proposal: any) => proposal.id !== proposalId),
             }
           : state.currentProject,
     }))

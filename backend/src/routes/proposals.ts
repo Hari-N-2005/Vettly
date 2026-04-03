@@ -184,4 +184,45 @@ router.post('/:projectId/save', upload.single('file'), async (req: AuthRequest, 
   }
 })
 
+router.delete('/:projectId/:proposalId', async (req: AuthRequest, res: Response) => {
+  try {
+    const { projectId, proposalId } = req.params
+
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        userId: req.userId,
+      },
+    })
+
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+
+    const proposal = await prisma.vendorProposal.findFirst({
+      where: {
+        id: proposalId,
+        projectId,
+        userId: req.userId,
+      },
+      select: {
+        id: true,
+      },
+    })
+
+    if (!proposal) {
+      return res.status(404).json({ error: 'Saved vendor not found for this project' })
+    }
+
+    await prisma.vendorProposal.delete({
+      where: { id: proposal.id },
+    })
+
+    return res.json({ message: 'Saved vendor deleted' })
+  } catch (error: any) {
+    console.error('Failed to delete saved vendor proposal:', error)
+    return res.status(500).json({ error: error.message || 'Failed to delete saved vendor' })
+  }
+})
+
 export default router

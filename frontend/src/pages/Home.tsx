@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { useProjectStore } from '../stores/projectStore'
 import { ComplianceStatus, RequirementCategory } from '@/types'
-import { saveVendorProposal, validateVendorProposal } from '../services/proposalService'
+import { deleteProposal, saveVendorProposal, validateVendorProposal } from '../services/proposalService'
 import { uploadRFPForExtraction } from '../services/rfpService'
 import { scanVendorRisks } from '../services/riskService'
 
@@ -35,6 +35,7 @@ export default function Home() {
     createProject,
     deleteProject,
     appendVendorProposal,
+    removeVendorProposal,
     clearCurrentProject,
   } = useProjectStore()
 
@@ -56,12 +57,18 @@ export default function Home() {
   const [isSavingVendorDetails, setIsSavingVendorDetails] = useState(false)
   const [saveVendorDetailsError, setSaveVendorDetailsError] = useState<string>('')
   const [deleteProjectError, setDeleteProjectError] = useState<string>('')
+  const [deleteVendorError, setDeleteVendorError] = useState<string>('')
+  const [isDeletingVendor, setIsDeletingVendor] = useState(false)
   const [hasSavedVendorDetails, setHasSavedVendorDetails] = useState(false)
   const [projectName, setProjectName] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
   const [showSaveDialog, setShowSaveDialog] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [pendingDeleteProjectId, setPendingDeleteProjectId] = useState<string | null>(null)
+  const [showDeleteVendorDialog, setShowDeleteVendorDialog] = useState(false)
+  const [pendingDeleteVendorId, setPendingDeleteVendorId] = useState<string | null>(null)
+  const [showSavedVendors, setShowSavedVendors] = useState(false)
+  const [selectedComparisonVendorIds, setSelectedComparisonVendorIds] = useState<string[]>([])
   const {
     progress: validationProgress,
     complete: completeValidationProgress,
@@ -106,8 +113,13 @@ export default function Home() {
     setSaveProjectError('')
     setSaveVendorDetailsError('')
     setDeleteProjectError('')
+    setDeleteVendorError('')
     setShowDeleteDialog(false)
+    setShowDeleteVendorDialog(false)
     setPendingDeleteProjectId(null)
+    setPendingDeleteVendorId(null)
+    setShowSavedVendors(false)
+    setSelectedComparisonVendorIds((currentProject.proposals || []).slice(0, 2).map((proposal: any) => proposal.id))
     setHasSavedVendorDetails(false)
     setValidationResult(null)
     setRiskScanResult(null)
@@ -124,6 +136,18 @@ export default function Home() {
     return undefined
   }, [isValidatingVendor, resetValidationProgress, validationResult])
 
+  const savedVendors = useMemo(() => {
+    if (!currentProject?.proposals?.length) {
+      return []
+    }
+
+    return [...currentProject.proposals].sort((a: any, b: any) => {
+      const aTime = new Date(a.validatedAt || a.uploadedAt).getTime()
+      const bTime = new Date(b.validatedAt || b.uploadedAt).getTime()
+      return bTime - aTime
+    })
+  }, [currentProject])
+
   const comparisonCategories = useMemo(() => {
     const uniqueCategories = new Set<string>()
     confirmedRequirements.forEach((req: any) => {
@@ -132,16 +156,15 @@ export default function Home() {
     return Array.from(uniqueCategories)
   }, [confirmedRequirements])
 
-  const comparisonVendors = useMemo<VendorComparisonVendor[]>(() => {
-    if (!validationResult) {
-      return []
-    }
+  const toggleComparisonVendor = (proposalId: string) => {
+    setSelectedComparisonVendorIds(prev =>
+      prev.includes(proposalId)
+        ? prev.filter(id => id !== proposalId)
+        : [...prev, proposalId]
+    )
+  }
 
-    const resultsByRequirement = new Map<string, any>()
-    validationResult.complianceResults.forEach((result: any) => {
-      resultsByRequirement.set(result.requirementId, result)
-    })
-
+  const buildCategoryStatuses = (resultsByRequirement: Map<string, any>) => {
     const categoryStatuses: VendorComparisonVendor['categoryStatuses'] = {}
 
     const categoryBuckets = new Map<
@@ -209,6 +232,77 @@ export default function Home() {
       }
     })
 
+    return categoryStatuses
+  }
+
+  const comparisonVendors = useMemo<VendorComparisonVendor[]>(() => {
+    if (currentProject?.proposals?.length && selectedComparisonVendorIds.length > 0) {
+      const selectedProposals = currentProject.proposals.filter((proposal: any) =>
+        selectedComparisonVendorIds.includes(proposal.id)
+      )
+
+      if (selectedProposals.length > 0) {
+        return selectedProposals.map((proposal: any) => {
+          const normalizedResults = Array.isArray(proposal.complianceResults)
+            ? proposal.complianceResults.map((result: any) => ({
+                requirementId: result.requirementId,
+                status:
+                  result.status === 'Met' || result.status === 'Partially Met' || result.status === 'Missing'
+                    ? result.status
+                    : ('Missing' as ComplianceStatus),
+                confidenceScore: result.confidence ?? 0,
+                matchedExcerpt: result.matchedExcerpt ?? null,
+                explanation: result.explanation || 'No detailed explanation returned.',
+                suggestedFollowUp: result.suggestedFollowUp || undefined,
+              }))
+            : []
+
+          const resultsByRequirement = new Map<string, any>()
+          normalizedResults.forEach((result: any) => {
+            resultsByRequirement.set(result.requirementId, result)
+          })
+
+          const metCount =
+            typeof proposal.metCount === 'number'
+              ? proposal.metCount
+              : normalizedResults.filter((result: any) => result.status === 'Met').length
+          const partialCount =
+            typeof proposal.partialCount === 'number'
+              ? proposal.partialCount
+              : normalizedResults.filter((result: any) => result.status === 'Partially Met').length
+          const missingCount =
+            typeof proposal.missingCount === 'number'
+              ? proposal.missingCount
+              : normalizedResults.filter((result: any) => result.status === 'Missing').length
+
+          return {
+            vendorId: proposal.id,
+            vendorName: proposal.vendorName || 'Saved Vendor',
+            complianceScore: proposal.overallScore ?? 0,
+            metCount,
+            partialCount,
+            missingCount,
+            risks: {
+              total: 0,
+              high: 0,
+              medium: 0,
+              low: 0,
+            },
+            categoryStatuses: buildCategoryStatuses(resultsByRequirement),
+          }
+        })
+      }
+    }
+
+    if (!validationResult) {
+      return []
+    }
+
+    const resultsByRequirement = new Map<string, any>()
+    validationResult.complianceResults.forEach((result: any) => {
+      resultsByRequirement.set(result.requirementId, result)
+    })
+
     const riskSummary = riskScanResult?.riskSummary ?? { high: 0, medium: 0, low: 0 }
 
     return [
@@ -225,10 +319,16 @@ export default function Home() {
           medium: riskSummary.medium,
           low: riskSummary.low,
         },
-        categoryStatuses,
+        categoryStatuses: buildCategoryStatuses(resultsByRequirement),
       },
     ]
-  }, [confirmedRequirements, riskScanResult, validationResult])
+  }, [
+    buildCategoryStatuses,
+    currentProject,
+    riskScanResult,
+    selectedComparisonVendorIds,
+    validationResult,
+  ])
 
   const riskHeatmapVendors = useMemo(() => {
     if (!riskScanResult) {
@@ -308,6 +408,33 @@ export default function Home() {
     setShowDeleteDialog(true)
   }
 
+  const handleRequestDeleteVendor = (proposalId: string) => {
+    setPendingDeleteVendorId(proposalId)
+    setDeleteVendorError('')
+    setShowDeleteVendorDialog(true)
+  }
+
+  const handleDeleteVendor = async () => {
+    if (!currentProject?.id || !pendingDeleteVendorId) {
+      return
+    }
+
+    setIsDeletingVendor(true)
+    setDeleteVendorError('')
+
+    try {
+      await deleteProposal(currentProject.id, pendingDeleteVendorId)
+      removeVendorProposal(currentProject.id, pendingDeleteVendorId)
+      setSelectedComparisonVendorIds(prev => prev.filter(id => id !== pendingDeleteVendorId))
+      setShowDeleteVendorDialog(false)
+      setPendingDeleteVendorId(null)
+    } catch (error: any) {
+      setDeleteVendorError(error.message || 'Failed to delete saved vendor.')
+    } finally {
+      setIsDeletingVendor(false)
+    }
+  }
+
   const handleDeleteProject = async () => {
     if (!pendingDeleteProjectId) {
       return
@@ -358,6 +485,7 @@ export default function Home() {
     setHasScannedRisks(false)
     setHasSavedVendorDetails(false)
     setSaveVendorDetailsError('')
+    setShowSavedVendors(false)
     setVendorProposalFile(null)
     setVendorName('')
   }
@@ -498,6 +626,7 @@ export default function Home() {
         partialCount: response.partialCount,
         missingCount: response.missingCount,
       })
+      setSelectedComparisonVendorIds(prev => (prev.includes(response.id) ? prev : [response.id, ...prev]))
       setHasSavedVendorDetails(true)
     } catch (error: any) {
       setSaveVendorDetailsError(error.message || 'Failed to save vendor details.')
@@ -799,6 +928,95 @@ export default function Home() {
                       </p>
                     )}
 
+                    {currentProject && (
+                      <div className="mt-6 rounded-xl border border-legal-blue/30 bg-legal-slate/50 p-5">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                          <div>
+                            <h4 className="text-lg font-semibold text-gray-100">Saved Vendors</h4>
+                            <p className="text-sm text-gray-400">{savedVendors.length} saved for this project</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowSavedVendors(prev => !prev)}
+                            className="px-4 py-2 text-emerald-300 hover:text-emerald-200 transition-colors border border-emerald-400/40 rounded-lg"
+                          >
+                            {showSavedVendors ? 'Hide Saved Vendors' : `View Saved Vendors (${savedVendors.length})`}
+                          </button>
+                        </div>
+
+                        {showSavedVendors && (
+                          <div className="mt-4">
+                            {savedVendors.length === 0 ? (
+                              <p className="text-sm text-gray-400">
+                                No vendors have been saved yet. Validate a proposal and click Save Vendor Details to add one.
+                              </p>
+                            ) : (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {savedVendors.map((proposal: any) => (
+                                  <article
+                                    key={proposal.id}
+                                    className="rounded-lg border border-legal-blue/30 bg-legal-dark/40 p-4"
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div>
+                                        <h4 className="text-lg font-semibold text-gray-100">{proposal.vendorName}</h4>
+                                        <p className="text-xs text-gray-400 mt-1">
+                                          Saved {new Date(proposal.validatedAt || proposal.uploadedAt).toLocaleString()}
+                                        </p>
+                                      </div>
+                                      <div className="text-right">
+                                        <p className="text-xs text-gray-400">Overall Score</p>
+                                        <p className="text-xl font-bold text-legal-gold">{proposal.overallScore ?? 0}%</p>
+                                      </div>
+                                    </div>
+
+                                    <div className="mt-3 text-sm text-gray-300 grid grid-cols-3 gap-2">
+                                      <p>
+                                        Met: <span className="text-emerald-300 font-semibold">{proposal.metCount ?? 0}</span>
+                                      </p>
+                                      <p>
+                                        Partial: <span className="text-amber-300 font-semibold">{proposal.partialCount ?? 0}</span>
+                                      </p>
+                                      <p>
+                                        Missing: <span className="text-rose-300 font-semibold">{proposal.missingCount ?? 0}</span>
+                                      </p>
+                                    </div>
+
+                                    {proposal.filename && (
+                                      <p className="mt-2 text-xs text-gray-400 truncate">File: {proposal.filename}</p>
+                                    )}
+
+                                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleComparisonVendor(proposal.id)}
+                                        className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
+                                          selectedComparisonVendorIds.includes(proposal.id)
+                                            ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-200'
+                                            : 'border-legal-blue/40 bg-legal-slate text-gray-200 hover:bg-legal-blue/20'
+                                        }`}
+                                      >
+                                        {selectedComparisonVendorIds.includes(proposal.id)
+                                          ? 'Added To Comparison'
+                                          : 'Use For Comparison'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRequestDeleteVendor(proposal.id)}
+                                        className="rounded-lg border border-rose-500/50 bg-rose-500/20 px-3 py-2 text-sm font-semibold text-rose-200 transition-colors hover:bg-rose-500/30"
+                                      >
+                                        Delete Vendor
+                                      </button>
+                                    </div>
+                                  </article>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {validationResult && (
                       <div className="mt-6 rounded-xl border border-legal-blue/30 bg-legal-slate/50 p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                         <div>
@@ -836,7 +1054,7 @@ export default function Home() {
                       </p>
                     )}
 
-                    {validationResult && (
+                    {comparisonVendors.length > 0 && (
                       <div className="mt-6">
                         <VendorComparisonTable
                           vendors={comparisonVendors}
@@ -930,6 +1148,62 @@ export default function Home() {
                       className="rounded-lg border border-rose-500/50 bg-rose-500/20 px-4 py-2.5 text-sm font-semibold text-rose-200 transition-colors hover:bg-rose-500/30"
                     >
                       Delete Project
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showDeleteVendorDialog && pendingDeleteVendorId && (
+              <div className="fixed inset-0 z-[80] flex items-center justify-center px-4">
+                <div
+                  className="absolute inset-0 bg-black/60"
+                  onClick={() => {
+                    if (isDeletingVendor) {
+                      return
+                    }
+                    setShowDeleteVendorDialog(false)
+                    setPendingDeleteVendorId(null)
+                    setDeleteVendorError('')
+                  }}
+                />
+                <div className="relative w-full max-w-lg rounded-2xl border border-rose-500/30 bg-legal-dark p-6 shadow-2xl">
+                  <p className="text-xs uppercase tracking-[0.2em] text-rose-300">Delete saved vendor</p>
+                  <h3 className="mt-2 text-xl font-bold text-gray-100">
+                    Remove this vendor from the project?
+                  </h3>
+                  <p className="mt-3 text-sm text-gray-300">
+                    This deletes the saved vendor proposal and all associated compliance results for this project.
+                  </p>
+
+                  {deleteVendorError && (
+                    <p className="mt-4 rounded-lg border border-rose-500/40 bg-rose-950/40 px-3 py-2 text-sm text-rose-200">
+                      {deleteVendorError}
+                    </p>
+                  )}
+
+                  <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isDeletingVendor) {
+                          return
+                        }
+                        setShowDeleteVendorDialog(false)
+                        setPendingDeleteVendorId(null)
+                        setDeleteVendorError('')
+                      }}
+                      className="rounded-lg border border-legal-blue/40 bg-legal-slate px-4 py-2.5 text-sm font-semibold text-gray-100 transition-colors hover:bg-legal-blue/20"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeleteVendor}
+                      disabled={isDeletingVendor}
+                      className="rounded-lg border border-rose-500/50 bg-rose-500/20 px-4 py-2.5 text-sm font-semibold text-rose-200 transition-colors hover:bg-rose-500/30 disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {isDeletingVendor ? 'Deleting...' : 'Delete Vendor'}
                     </button>
                   </div>
                 </div>
