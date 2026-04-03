@@ -2,9 +2,15 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './stores/authStore'
 import Home from './pages/Home'
+import DashboardPage from './pages/DashboardPage'
+import RequirementsPage from './pages/RequirementsPage'
+import VendorComparisonPage from './pages/VendorComparisonPage'
+import RiskAnalysisPage from './pages/RiskAnalysisPage'
+import SettingsPage from './pages/SettingsPage'
 import { Login } from './pages/Login'
 import { Signup } from './pages/Signup'
 import TenderWorkflowPage from './pages/TenderWorkflowPage'
+import DashboardLayout from './layouts/DashboardLayout'
 import BackendSleepNotice from './components/common/BackendSleepNotice'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -98,18 +104,19 @@ function App() {
             path="/"
             element={
               <ProtectedRoute>
-                <Home />
+                <DashboardLayout />
               </ProtectedRoute>
             }
-          />
-          <Route
-            path="/workflow"
-            element={
-              <ProtectedRoute>
-                <TenderWorkflowPage />
-              </ProtectedRoute>
-            }
-          />
+          >
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="rfp-uploads" element={<Home />} />
+            <Route path="requirements" element={<RequirementsPage />} />
+            <Route path="vendor-comparison" element={<VendorComparisonPage />} />
+            <Route path="risk-analysis" element={<RiskAnalysisPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="workflow" element={<TenderWorkflowPage />} />
+          </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

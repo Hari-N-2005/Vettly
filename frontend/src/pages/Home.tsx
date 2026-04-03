@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { useProjectStore } from '../stores/projectStore'
 import { ComplianceStatus, RequirementCategory } from '@/types'
@@ -28,9 +27,8 @@ const normalizeCategory = (category?: string): RequirementCategory => {
 }
 
 export default function Home() {
-  const navigate = useNavigate()
-  const { user, logout } = useAuthStore()
-  const { state: tenderState, dispatch: tenderDispatch } = useTender()
+  const { user } = useAuthStore()
+  const { dispatch: tenderDispatch } = useTender()
   const {
     projects,
     currentProject,
@@ -409,6 +407,8 @@ export default function Home() {
     })
     tenderDispatch({ type: 'SET_REQUIREMENTS', payload: [] })
     tenderDispatch({ type: 'SET_STEP', payload: 'review' })
+
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const handleConfirmRequirements = (selected: any[]) => {
@@ -434,6 +434,8 @@ export default function Home() {
     clearCurrentProject()
     tenderDispatch({ type: 'RESET' })
     await fetchProject(projectId)
+
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const handleRequestDeleteProject = (projectId: string) => {
@@ -783,7 +785,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-legal-dark">
+    <div className="space-y-8">
       <AnalysisLoader
         isVisible={isAnalysisLoading}
         title={analysisTitle}
@@ -803,57 +805,51 @@ export default function Home() {
         }
       />
 
-      {/* Navigation Header */}
-      <nav className="border-b border-legal-blue border-opacity-20 bg-legal-dark bg-opacity-80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="text-2xl font-bold bg-gradient-to-r from-legal-accent to-legal-gold bg-clip-text text-transparent">
-              Vettly
-            </div>
-            <div className="flex items-center gap-4">
-              {user && (
-                <>
-                  <span className="text-sm text-gray-400">{user.email}</span>
-                  {currentProject && (
-                    <button
-                      onClick={handleBackToProjects}
-                      className="px-3 py-1.5 text-sm text-legal-accent hover:text-legal-gold transition-colors border border-legal-accent/30 rounded"
-                    >
-                      Back to Projects
-                    </button>
-                  )}
-                  <button
-                    onClick={() => {
-                      logout()
-                      navigate('/login')
-                    }}
-                    className="px-4 py-2 bg-legal-accent/20 text-legal-accent rounded-lg hover:bg-legal-accent/30 transition-colors text-sm font-medium"
-                  >
-                    Logout
-                  </button>
-                </>
-              )}
-            </div>
+      <section className="rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-sm">
+        <div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">RFP Uploads</p>
+            <h1 className="mt-2 text-3xl font-semibold text-slate-100">Tender Compliance Workspace</h1>
+            <p className="mt-2 text-sm text-slate-400 max-w-2xl">
+              Extract requirements from tender documents, validate vendor submissions, and surface risks in a structured review flow.
+            </p>
           </div>
         </div>
-      </nav>
+      </section>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <article className="rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-sm">
+          <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Signed In</p>
+          <p className="mt-2 text-sm font-medium text-slate-100">{user?.email || 'Active user'}</p>
+          <p className="mt-2 text-sm text-slate-400">Workspace access is scoped to your saved tender projects.</p>
+        </article>
+        <article className="rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-sm">
+          <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Requirements</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-100">{confirmedRequirements.length}</p>
+          <p className="mt-2 text-sm text-slate-400">Confirmed requirements ready for compliance checks.</p>
+        </article>
+        <article className="rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-sm">
+          <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Saved Vendors</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-100">{savedVendors.length}</p>
+          <p className="mt-2 text-sm text-slate-400">Vendor submissions available for comparison.</p>
+        </article>
+      </section>
+
+      <main>
         {/* Active Project Banner */}
         {currentProject && (
           <section className="mb-8">
-            <div className="bg-legal-slate/70 rounded-xl border border-legal-accent/40 p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="rounded-xl border border-blue-500/30 bg-slate-900 p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
-                <p className="text-xs uppercase tracking-wider text-legal-accent">Loaded Project</p>
-                <h2 className="text-2xl font-bold text-gray-100 mt-1">{currentProject.name}</h2>
-                <p className="text-sm text-gray-400 mt-1">
+                <p className="text-xs uppercase tracking-wider text-blue-200">Loaded Project</p>
+                <h2 className="text-2xl font-bold text-slate-100 mt-1">{currentProject.name}</h2>
+                <p className="text-sm text-slate-400 mt-1">
                   {currentProject.requirements.length} requirements preloaded. You can upload a vendor proposal now.
                 </p>
               </div>
               <button
                 onClick={handleBackToProjects}
-                className="px-4 py-2 text-legal-accent hover:text-legal-gold transition-colors border border-legal-accent/30 rounded-lg"
+                className="px-4 py-2 text-blue-200 hover:text-blue-100 transition-colors border border-blue-500/30 rounded-lg"
               >
                 Back to Project List
               </button>
@@ -862,52 +858,6 @@ export default function Home() {
         )}
 
         <>
-            {/* Hero Section */}
-            <section className="mb-16">
-              <div className="text-center mb-12">
-                <h2 className="text-5xl md:text-6xl font-bold text-gray-100 mb-4 leading-tight">
-                  Tender Compliance
-                  <br />
-                  <span className="bg-gradient-to-r from-legal-accent to-legal-gold bg-clip-text text-transparent">
-                    Simplified
-                  </span>
-                </h2>
-                <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-                  Automatically extract requirements from RFP documents, validate vendor proposals against compliance standards,
-                  and identify risks.
-                </p>
-                <p className="mt-4 text-sm text-legal-accent">
-                  Workflow step: {tenderState.currentStep}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-                <div className="bg-legal-slate bg-opacity-50 rounded-lg p-6 border border-legal-blue border-opacity-20 hover:border-legal-accent hover:border-opacity-50 transition-all">
-                  <div className="text-3xl mb-3">🤖</div>
-                  <h3 className="font-semibold text-gray-100 mb-2">AI-Powered</h3>
-                  <p className="text-sm text-gray-400">
-                    AI will automatically extract requirements and evaluate compliance
-                  </p>
-                </div>
-
-                <div className="bg-legal-slate bg-opacity-50 rounded-lg p-6 border border-legal-blue border-opacity-20 hover:border-legal-accent hover:border-opacity-50 transition-all">
-                  <div className="text-3xl mb-3">✅</div>
-                  <h3 className="font-semibold text-gray-100 mb-2">Vendor Validation</h3>
-                  <p className="text-sm text-gray-400">
-                    Instantly validate vendor proposals against all confirmed requirements
-                  </p>
-                </div>
-
-                <div className="bg-legal-slate bg-opacity-50 rounded-lg p-6 border border-legal-blue border-opacity-20 hover:border-legal-accent hover:border-opacity-50 transition-all">
-                  <div className="text-3xl mb-3">⚠️</div>
-                  <h3 className="font-semibold text-gray-100 mb-2">Risk Detection</h3>
-                  <p className="text-sm text-gray-400">
-                    Automatically identify legal, financial, and operational risks
-                  </p>
-                </div>
-              </div>
-            </section>
-
             {/* Upload Section */}
             <section className="mb-16">
               <RFPUploadForm onRequirementsExtracted={handleRequirementsExtracted} />
@@ -1513,13 +1463,6 @@ export default function Home() {
               </div>
             )}
         </>
-
-        {/* Footer */}
-        <footer className="mt-20 border-t border-legal-blue border-opacity-20 pt-12 text-center">
-          <p className="text-gray-400 text-sm">
-            © 2026 Vettly - Intelligent Tender Compliance Validation. All rights reserved.
-          </p>
-        </footer>
       </main>
 
     </div>
