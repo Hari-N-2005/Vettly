@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
+import BackendSleepNotice from '@/components/common/BackendSleepNotice'
 
 export function Signup() {
   const navigate = useNavigate()
@@ -139,6 +140,8 @@ export function Signup() {
           </div>
         </div>
       </div>
+
+      <BackendSleepNotice isActive={isLoading} />
     </div>
   )
 }

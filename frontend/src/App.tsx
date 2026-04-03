@@ -5,6 +5,7 @@ import Home from './pages/Home'
 import { Login } from './pages/Login'
 import { Signup } from './pages/Signup'
 import TenderWorkflowPage from './pages/TenderWorkflowPage'
+import BackendSleepNotice from './components/common/BackendSleepNotice'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token, isLoading } = useAuthStore()
@@ -16,6 +17,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-legal-accent mx-auto mb-4"></div>
           <p className="text-gray-400">Loading...</p>
         </div>
+        <BackendSleepNotice isActive />
       </div>
     )
   }
@@ -37,6 +39,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-legal-accent mx-auto mb-4"></div>
           <p className="text-gray-400">Loading...</p>
         </div>
+        <BackendSleepNotice isActive />
       </div>
     )
   }
@@ -66,6 +69,7 @@ function App() {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-legal-accent mx-auto mb-4"></div>
           <p className="text-gray-400">Loading...</p>
         </div>
+        <BackendSleepNotice isActive />
       </div>
     )
   }
