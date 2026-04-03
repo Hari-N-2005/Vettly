@@ -1,10 +1,15 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { config } from '@/config'
 import { ExtractedRequirement } from '@/types'
 
-const client = new Anthropic({
-  apiKey: config.anthropicApiKey,
-})
+const getAnthropicClient = (): Anthropic | null => {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return null
+  }
+
+  return new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+  })
+}
 
 export class AIService {
   /**
@@ -14,6 +19,11 @@ export class AIService {
     rfpText: string,
     projectName: string
   ): Promise<ExtractedRequirement[]> {
+    const client = getAnthropicClient()
+    if (!client) {
+      throw new Error('Anthropic is not configured for this deployment.')
+    }
+
     const prompt = `You are a legal and procurement expert analyzing a Request for Proposal (RFP) document.
 
 Extract all key requirements from the following RFP text. For each requirement, provide:
@@ -40,7 +50,7 @@ Return the requirements as a JSON array with this structure:
 Extract 5-20 key requirements. Return ONLY valid JSON, no other text.`
 
     const message = await client.messages.create({
-      model: config.anthropicModel,
+      model: process.env.ANTHROPIC_MODEL || 'claude-3-sonnet-20240229',
       max_tokens: 2048,
       messages: [
         {
@@ -83,6 +93,15 @@ Extract 5-20 key requirements. Return ONLY valid JSON, no other text.`
     confidence: number
     evidence: string[]
   }> {
+    const client = getAnthropicClient()
+    if (!client) {
+      return {
+        status: 'unclear',
+        confidence: 0,
+        evidence: [],
+      }
+    }
+
     const prompt = `You are a legal compliance expert reviewing a vendor proposal against a specific requirement.
 
 Requirement:
@@ -103,7 +122,7 @@ Analyze if the proposal meets the requirement. Respond with JSON:
 Return ONLY valid JSON.`
 
     const message = await client.messages.create({
-      model: config.anthropicModel,
+      model: process.env.ANTHROPIC_MODEL || 'claude-3-sonnet-20240229',
       max_tokens: 512,
       messages: [
         {
@@ -147,6 +166,11 @@ Return ONLY valid JSON.`
       evidence: string[]
     }>
   > {
+    const client = getAnthropicClient()
+    if (!client) {
+      return []
+    }
+
     const prompt = `You are a risk assessment expert reviewing a vendor proposal.
 
 Key requirements:
@@ -168,7 +192,7 @@ Identify 3-7 potential risks or gaps in the proposal. Return JSON array:
 Return ONLY valid JSON.`
 
     const message = await client.messages.create({
-      model: config.anthropicModel,
+      model: process.env.ANTHROPIC_MODEL || 'claude-3-sonnet-20240229',
       max_tokens: 1024,
       messages: [
         {

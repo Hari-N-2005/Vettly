@@ -1,4 +1,6 @@
-const API_BASE = 'http://localhost:3000'
+import { API_BASE_URL } from '@/utils/constants'
+
+const API_BASE = API_BASE_URL.replace(/\/$/, '')
 
 export interface AuthUser {
   id: string
@@ -13,7 +15,7 @@ export interface AuthResponse {
 
 export const authService = {
   async signup(email: string, password: string, name: string): Promise<AuthResponse> {
-    const response = await fetch(`${API_BASE}/api/auth/signup`, {
+    const response = await fetch(`${API_BASE}/auth/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, name }),
@@ -28,7 +30,7 @@ export const authService = {
   },
 
   async login(email: string, password: string): Promise<AuthResponse> {
-    const response = await fetch(`${API_BASE}/api/auth/login`, {
+    const response = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -43,7 +45,7 @@ export const authService = {
   },
 
   async getMe(token: string): Promise<AuthUser> {
-    const response = await fetch(`${API_BASE}/api/auth/me`, {
+    const response = await fetch(`${API_BASE}/auth/me`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },

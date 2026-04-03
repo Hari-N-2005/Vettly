@@ -2,7 +2,7 @@ import { Router, Response } from 'express'
 import multer from 'multer'
 import pdfParse from 'pdf-parse'
 import { Prisma, PrismaClient } from '@prisma/client'
-import { authMiddleware, AuthRequest } from '../middleware/authMiddleware'
+import { authMiddleware, AuthRequest } from '../middleware/authMiddleware.js'
 
 const prisma = new PrismaClient()
 const router = Router()

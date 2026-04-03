@@ -1,5 +1,6 @@
 node_modules/
 .env
+.env.docker
 .env.local
 .env.*.local
 dist/
@@ -16,3 +17,6 @@ uploads/
 .cache/
 coverage/
 .nyc_output/
+
+.env.example
+.env.docker.example

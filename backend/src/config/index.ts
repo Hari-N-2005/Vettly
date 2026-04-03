@@ -17,10 +17,6 @@ export const config = {
   jwtExpiry: process.env.JWT_EXPIRY || '1h',
   jwtRefreshExpiry: process.env.JWT_REFRESH_EXPIRY || '7d',
 
-  // Anthropic Claude
-  anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-  anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-3-sonnet-20240229',
-
   // AWS S3
   awsRegion: process.env.AWS_REGION || 'us-east-1',
   awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID,
@@ -46,7 +42,7 @@ export const config = {
 }
 
 // Validate required config
-const requiredVars = ['DATABASE_URL', 'ANTHROPIC_API_KEY', 'JWT_SECRET']
+const requiredVars = ['DATABASE_URL', 'JWT_SECRET']
 const missing = requiredVars.filter(v => !process.env[v])
 
 if (missing.length > 0) {

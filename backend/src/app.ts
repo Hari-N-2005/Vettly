@@ -9,10 +9,10 @@ import fs from 'fs'
 import path from 'path'
 import PDFDocument from 'pdfkit'
 import { PrismaClient } from '@prisma/client'
-import authRouter from './routes/auth'
-import projectsRouter from './routes/projects'
-import proposalsRouter from './routes/proposals'
-import { authMiddleware, AuthRequest } from './middleware/authMiddleware'
+import authRouter from './routes/auth.js'
+import projectsRouter from './routes/projects.js'
+import proposalsRouter from './routes/proposals.js'
+import { authMiddleware, AuthRequest } from './middleware/authMiddleware.js'
 
 dotenv.config()
 
