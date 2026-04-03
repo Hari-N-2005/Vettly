@@ -11,10 +11,13 @@ import RFPUploadForm from '../components/upload/RFPUploadForm'
 import RequirementChecklist from '../components/requirements/RequirementChecklist'
 import RiskFlagPanel from '../components/risks/RiskFlagPanel'
 import RiskHeatmap from '../components/risks/RiskHeatmap'
-import SimulatedProgressBar from '../components/common/SimulatedProgressBar'
+import AnalysisLoader from '../components/common/AnalysisLoader'
+import ErrorToast from '../components/common/ErrorToast'
+import EmptyState from '../components/common/EmptyState'
 import RecentProjectsList from '../components/rfp/RecentProjectsList'
 import VendorComparisonTable, { VendorComparisonVendor } from '../components/proposals/VendorComparisonTable'
 import { useSimulatedProgress } from '@/hooks/useSimulatedProgress'
+import { useTender, VendorResult } from '@/context/TenderContext'
 
 const normalizeCategory = (category?: string): RequirementCategory => {
   if (category === 'Technical' || category === 'Legal' || category === 'Financial' || category === 'Operational' || category === 'Environmental') {
@@ -27,6 +30,7 @@ const normalizeCategory = (category?: string): RequirementCategory => {
 export default function Home() {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
+  const { state: tenderState, dispatch: tenderDispatch } = useTender()
   const {
     projects,
     currentProject,
@@ -45,6 +49,7 @@ export default function Home() {
   const [vendorName, setVendorName] = useState('')
   const [vendorProposalFile, setVendorProposalFile] = useState<File | null>(null)
   const [validationResult, setValidationResult] = useState<any>(null)
+  const [expandedValidationResultIds, setExpandedValidationResultIds] = useState<Record<string, boolean>>({})
   const [validationError, setValidationError] = useState<string>('')
   const [isValidatingVendor, setIsValidatingVendor] = useState(false)
   const [hasValidatedVendor, setHasValidatedVendor] = useState(false)
@@ -119,13 +124,23 @@ export default function Home() {
     setPendingDeleteProjectId(null)
     setPendingDeleteVendorId(null)
     setShowSavedVendors(false)
-    setSelectedComparisonVendorIds((currentProject.proposals || []).slice(0, 2).map((proposal: any) => proposal.id))
+    setSelectedComparisonVendorIds([])
     setHasSavedVendorDetails(false)
     setValidationResult(null)
     setRiskScanResult(null)
     setValidationError('')
     setRiskScanError('')
-  }, [currentProject])
+
+    tenderDispatch({
+      type: 'SET_RFP',
+      payload: {
+        projectName: currentProject.name,
+        rfpDocument: null,
+      },
+    })
+    tenderDispatch({ type: 'SET_REQUIREMENTS', payload: mappedRequirements as any })
+    tenderDispatch({ type: 'SET_STEP', payload: 'validate' })
+  }, [currentProject, tenderDispatch])
 
   useEffect(() => {
     if (!isValidatingVendor && validationResult) {
@@ -236,6 +251,10 @@ export default function Home() {
   }
 
   const comparisonVendors = useMemo<VendorComparisonVendor[]>(() => {
+    if (currentProject && selectedComparisonVendorIds.length === 0) {
+      return []
+    }
+
     if (currentProject?.proposals?.length && selectedComparisonVendorIds.length > 0) {
       const selectedProposals = currentProject.proposals.filter((proposal: any) =>
         selectedComparisonVendorIds.includes(proposal.id)
@@ -364,8 +383,10 @@ export default function Home() {
     }
   }, [riskHeatmapVendors, riskScanResult])
 
-  const handleRequirementsExtracted = (payload: any, _file?: File) => {
+  const handleRequirementsExtracted = (payload: any, file?: File) => {
     const requirements = payload.requirements || payload
+    const project = payload?.projectName || ''
+
     setExtractedRequirements(Array.isArray(requirements) ? requirements : [])
     setExtractionMeta({
       ...payload,
@@ -378,10 +399,22 @@ export default function Home() {
     setHasScannedRisks(false)
     setHasSavedVendorDetails(false)
     setSaveVendorDetailsError('')
+
+    tenderDispatch({
+      type: 'SET_RFP',
+      payload: {
+        projectName: project,
+        rfpDocument: file ?? null,
+      },
+    })
+    tenderDispatch({ type: 'SET_REQUIREMENTS', payload: [] })
+    tenderDispatch({ type: 'SET_STEP', payload: 'review' })
   }
 
   const handleConfirmRequirements = (selected: any[]) => {
     setConfirmedRequirements(selected)
+    tenderDispatch({ type: 'SET_REQUIREMENTS', payload: selected as any })
+    tenderDispatch({ type: 'SET_STEP', payload: 'validate' })
   }
 
   const handleOpenProject = async (projectId: string) => {
@@ -399,6 +432,7 @@ export default function Home() {
     setVendorProposalFile(null)
     setVendorName('')
     clearCurrentProject()
+    tenderDispatch({ type: 'RESET' })
     await fetchProject(projectId)
   }
 
@@ -459,6 +493,7 @@ export default function Home() {
         setHasScannedRisks(false)
         setVendorProposalFile(null)
         setVendorName('')
+        tenderDispatch({ type: 'RESET' })
       }
 
       setShowDeleteDialog(false)
@@ -488,6 +523,7 @@ export default function Home() {
     setShowSavedVendors(false)
     setVendorProposalFile(null)
     setVendorName('')
+    tenderDispatch({ type: 'RESET' })
   }
 
   const handleSaveProject = async () => {
@@ -506,6 +542,7 @@ export default function Home() {
       setConfirmedRequirements([])
       setHasValidatedVendor(false)
       setHasScannedRisks(false)
+      tenderDispatch({ type: 'RESET' })
       await fetchProjects()
     } catch (error: any) {
       setSaveProjectError(error.message || 'Failed to save project')
@@ -538,12 +575,27 @@ export default function Home() {
       )
 
       setValidationResult(result)
+      setExpandedValidationResultIds({})
       setValidationError('')
       setHasValidatedVendor(true)
+
+      const mappedVendorResult: VendorResult = {
+        id: result.vendorName || `vendor-${Date.now()}`,
+        vendorName: result.vendorName || vendorName || 'Unknown Vendor',
+        complianceResults: result.complianceResults || [],
+        overallScore: result.overallScore || 0,
+        metCount: result.metCount || 0,
+        partialCount: result.partialCount || 0,
+        missingCount: result.missingCount || 0,
+      }
+
+      tenderDispatch({ type: 'ADD_VENDOR_RESULT', payload: mappedVendorResult })
+      tenderDispatch({ type: 'SET_STEP', payload: 'compare' })
       completeValidationProgress()
     } catch (error: any) {
       setValidationError(error.message || 'Validation failed')
       setValidationResult(null)
+      setExpandedValidationResultIds({})
       setHasValidatedVendor(false)
       resetValidationProgress()
     } finally {
@@ -625,9 +677,21 @@ export default function Home() {
         metCount: response.metCount,
         partialCount: response.partialCount,
         missingCount: response.missingCount,
+        filename: response.filename,
+        fileSize: response.fileSize,
+        matchingCriteria: confirmedRequirements,
+        requirementsSnapshot,
+        complianceResults: validationResult.complianceResults.map((result: any) => ({
+          requirementId: result.requirementId,
+          status: result.status,
+          confidence: result.confidenceScore ?? 0,
+          matchedExcerpt: result.matchedExcerpt ?? null,
+          explanation: result.explanation ?? null,
+          suggestedFollowUp: result.suggestedFollowUp ?? null,
+        })),
       })
-      setSelectedComparisonVendorIds(prev => (prev.includes(response.id) ? prev : [response.id, ...prev]))
       setHasSavedVendorDetails(true)
+      tenderDispatch({ type: 'SET_STEP', payload: 'report' })
     } catch (error: any) {
       setSaveVendorDetailsError(error.message || 'Failed to save vendor details.')
       setHasSavedVendorDetails(false)
@@ -636,8 +700,109 @@ export default function Home() {
     }
   }
 
+  const isAnalysisLoading = isValidatingVendor || isScanningRisks || isSavingVendorDetails
+
+  const analysisTitle = isValidatingVendor
+    ? 'Validating vendor proposal'
+    : isScanningRisks
+      ? 'Scanning proposal risks'
+      : 'Saving vendor results'
+
+  const analysisSteps = isValidatingVendor
+    ? [
+        'Extracting proposal text...',
+        'Matching requirements...',
+        'Scoring compliance...',
+        'Preparing validation summary...',
+      ]
+    : isScanningRisks
+      ? [
+          'Extracting proposal text...',
+          'Detecting risky language...',
+          'Classifying risk severity...',
+          'Compiling risk panel...',
+        ]
+      : [
+          'Preparing vendor payload...',
+          'Storing compliance results...',
+          'Saving tender comparison data...',
+          'Finalizing vendor record...',
+        ]
+
+  const activeError =
+    validationError
+      ? { key: 'validation', message: validationError }
+      : riskScanError
+        ? { key: 'risk', message: riskScanError }
+        : saveProjectError
+          ? { key: 'saveProject', message: saveProjectError }
+          : saveVendorDetailsError
+            ? { key: 'saveVendor', message: saveVendorDetailsError }
+            : deleteProjectError
+              ? { key: 'deleteProject', message: deleteProjectError }
+              : deleteVendorError
+                ? { key: 'deleteVendor', message: deleteVendorError }
+                : null
+
+  const dismissActiveError = () => {
+    if (!activeError) {
+      return
+    }
+
+    if (activeError.key === 'validation') setValidationError('')
+    if (activeError.key === 'risk') setRiskScanError('')
+    if (activeError.key === 'saveProject') setSaveProjectError('')
+    if (activeError.key === 'saveVendor') setSaveVendorDetailsError('')
+    if (activeError.key === 'deleteProject') setDeleteProjectError('')
+    if (activeError.key === 'deleteVendor') setDeleteVendorError('')
+  }
+
+  const retryActiveError = () => {
+    if (!activeError) {
+      return
+    }
+
+    if (activeError.key === 'validation') {
+      void handleValidateVendor()
+      return
+    }
+
+    if (activeError.key === 'risk') {
+      void handleScanRisks()
+      return
+    }
+
+    if (activeError.key === 'saveProject') {
+      void handleSaveProject()
+      return
+    }
+
+    if (activeError.key === 'saveVendor') {
+      void handleSaveVendorDetails()
+    }
+  }
+
   return (
     <div className="min-h-screen bg-legal-dark">
+      <AnalysisLoader
+        isVisible={isAnalysisLoading}
+        title={analysisTitle}
+        steps={analysisSteps}
+        progress={isValidatingVendor ? validationProgress : undefined}
+      />
+
+      <ErrorToast
+        isVisible={Boolean(activeError)}
+        title="Action failed"
+        message={activeError?.message || ''}
+        onDismiss={dismissActiveError}
+        onRetry={
+          activeError?.key === 'deleteProject' || activeError?.key === 'deleteVendor'
+            ? undefined
+            : retryActiveError
+        }
+      />
+
       {/* Navigation Header */}
       <nav className="border-b border-legal-blue border-opacity-20 bg-legal-dark bg-opacity-80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -711,6 +876,9 @@ export default function Home() {
                   Automatically extract requirements from RFP documents, validate vendor proposals against compliance standards,
                   and identify risks.
                 </p>
+                <p className="mt-4 text-sm text-legal-accent">
+                  Workflow step: {tenderState.currentStep}
+                </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
@@ -745,6 +913,22 @@ export default function Home() {
               <RFPUploadForm onRequirementsExtracted={handleRequirementsExtracted} />
             </section>
 
+            {extractionMeta && extractedRequirements.length === 0 && (
+              <section className="mb-16">
+                <EmptyState
+                  variant="requirements"
+                  title="No requirements were detected"
+                  description="Try uploading a clearer RFP file, or adjust the document content so mandatory clauses are explicit."
+                  actionLabel="Reset Upload"
+                  onAction={() => {
+                    setExtractionMeta(null)
+                    setConfirmedRequirements([])
+                    tenderDispatch({ type: 'SET_STEP', payload: 'upload' })
+                  }}
+                />
+              </section>
+            )}
+
             {/* Requirement Review Section */}
             {extractedRequirements.length > 0 && (
               <section className="mb-16">
@@ -771,11 +955,6 @@ export default function Home() {
                 {/* Save Project Button */}
                 {!currentProject && (
                   <div className="mt-6 flex justify-end gap-4">
-                    {saveProjectError && (
-                      <div className="w-full p-4 bg-red-950 border border-red-700 rounded-lg">
-                        <p className="text-sm text-red-300">{saveProjectError}</p>
-                      </div>
-                    )}
                     <button
                       onClick={() => setShowSaveDialog(true)}
                       disabled={isSavingProject || confirmedRequirements.length === 0}
@@ -834,16 +1013,6 @@ export default function Home() {
                       Validate one vendor proposal against {confirmedRequirements.length} confirmed requirement
                       {confirmedRequirements.length === 1 ? '' : 's'}.
                     </p>
-
-                    {isValidatingVendor && (
-                      <div className="mt-4">
-                        <SimulatedProgressBar
-                          progress={validationProgress}
-                          label="Validating vendor proposal"
-                          helperText="Estimated progress while Gemini matches the proposal against all selected requirements."
-                        />
-                      </div>
-                    )}
 
                     <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
@@ -916,16 +1085,132 @@ export default function Home() {
                       )}
                     </div>
 
-                    {validationError && (
-                      <p className="mt-4 text-sm text-red-300 bg-red-950/40 border border-red-700/40 rounded-lg px-3 py-2">
-                        {validationError}
-                      </p>
-                    )}
+                    {validationResult && (
+                      <div className="mt-6 rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-5">
+                        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <h4 className="text-lg font-semibold text-emerald-100">Validation result ready</h4>
+                            <p className="mt-1 text-sm text-emerald-100/80">
+                              {validationResult.vendorName || vendorName || 'Unknown Vendor'} was evaluated against the
+                              confirmed requirements.
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-right">
+                            <p className="text-xs uppercase tracking-[0.2em] text-emerald-200/70">Overall score</p>
+                            <p className="text-2xl font-bold text-emerald-100">
+                              {validationResult.overallScore}%
+                            </p>
+                          </div>
+                        </div>
 
-                    {riskScanError && (
-                      <p className="mt-4 text-sm text-red-300 bg-red-950/40 border border-red-700/40 rounded-lg px-3 py-2">
-                        {riskScanError}
-                      </p>
+                        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                          <div className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 p-3">
+                            <p className="text-xs text-emerald-200/70">Met</p>
+                            <p className="text-lg font-semibold text-emerald-100">{validationResult.metCount}</p>
+                          </div>
+                          <div className="rounded-lg border border-amber-400/20 bg-amber-500/10 p-3">
+                            <p className="text-xs text-amber-200/70">Partially met</p>
+                            <p className="text-lg font-semibold text-amber-100">{validationResult.partialCount}</p>
+                          </div>
+                          <div className="rounded-lg border border-rose-400/20 bg-rose-500/10 p-3">
+                            <p className="text-xs text-rose-200/70">Missing</p>
+                            <p className="text-lg font-semibold text-rose-100">{validationResult.missingCount}</p>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 rounded-lg border border-legal-blue/20 bg-legal-dark/40 p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-gray-100">Full compliance results</p>
+                            <p className="text-xs text-gray-400">{validationResult.complianceResults.length} requirements</p>
+                          </div>
+
+                          {validationResult.complianceResults.length > 0 ? (
+                            <div className="mt-3 max-h-[32rem] space-y-3 overflow-y-auto pr-1">
+                              {validationResult.complianceResults.map((result: any, index: number) => {
+                                const matchedRequirement = confirmedRequirements.find(
+                                  (requirement: any) => requirement.id === result.requirementId
+                                )
+
+                                return (
+                                  <article
+                                    key={`${result.requirementId}-${index}`}
+                                    className="rounded-lg border border-legal-blue/20 bg-legal-slate/40 p-4"
+                                  >
+                                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                      <div className="min-w-0">
+                                        <p className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                                          Requirement {index + 1}
+                                        </p>
+                                        <h5 className="mt-1 text-sm font-semibold text-gray-100">
+                                          {matchedRequirement?.requirementText || result.requirementText || result.requirementId}
+                                        </h5>
+                                        <p className="mt-1 text-xs text-gray-400">
+                                          ID: <span className="font-semibold text-gray-200">{result.requirementId}</span>
+                                        </p>
+                                      </div>
+
+                                      <div className="flex items-center gap-2">
+                                        <span
+                                          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                            result.status === 'Met'
+                                              ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200'
+                                              : result.status === 'Partially Met'
+                                                ? 'border-amber-400/40 bg-amber-500/15 text-amber-200'
+                                                : 'border-rose-400/40 bg-rose-500/15 text-rose-200'
+                                          }`}
+                                        >
+                                          {result.status}
+                                        </span>
+                                        <span className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-200">
+                                          {result.confidenceScore}% confidence
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setExpandedValidationResultIds(prev => ({
+                                              ...prev,
+                                              [result.requirementId]: !prev[result.requirementId],
+                                            }))
+                                          }
+                                          className="rounded-full border border-legal-blue/30 bg-legal-dark/60 px-3 py-1 text-[11px] font-semibold text-gray-200 transition-colors hover:bg-legal-blue/20"
+                                        >
+                                          {expandedValidationResultIds[result.requirementId] ? 'Hide details' : 'Show details'}
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {expandedValidationResultIds[result.requirementId] && (
+                                      <>
+                                        <div className="mt-3 grid gap-3 text-sm text-gray-300 md:grid-cols-2">
+                                          <div className="rounded-md border border-legal-blue/20 bg-legal-dark/50 p-3">
+                                            <p className="text-xs uppercase tracking-[0.16em] text-gray-500">Matched excerpt</p>
+                                            <p className="mt-1 text-gray-200">
+                                              {result.matchedExcerpt || 'No excerpt returned.'}
+                                            </p>
+                                          </div>
+                                          <div className="rounded-md border border-legal-blue/20 bg-legal-dark/50 p-3">
+                                            <p className="text-xs uppercase tracking-[0.16em] text-gray-500">Explanation</p>
+                                            <p className="mt-1 text-gray-200">{result.explanation || 'No explanation returned.'}</p>
+                                          </div>
+                                        </div>
+
+                                        {result.suggestedFollowUp && (
+                                          <div className="mt-3 rounded-md border border-amber-400/20 bg-amber-500/10 p-3 text-sm text-amber-100">
+                                            <p className="text-xs uppercase tracking-[0.16em] text-amber-200/70">Suggested follow-up</p>
+                                            <p className="mt-1">{result.suggestedFollowUp}</p>
+                                          </div>
+                                        )}
+                                      </>
+                                    )}
+                                  </article>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-sm text-gray-400">No compliance results were returned.</p>
+                          )}
+                        </div>
+                      </div>
                     )}
 
                     {currentProject && (
@@ -947,9 +1232,11 @@ export default function Home() {
                         {showSavedVendors && (
                           <div className="mt-4">
                             {savedVendors.length === 0 ? (
-                              <p className="text-sm text-gray-400">
-                                No vendors have been saved yet. Validate a proposal and click Save Vendor Details to add one.
-                              </p>
+                              <EmptyState
+                                variant="vendors"
+                                title="No vendors saved yet"
+                                description="Validate a proposal and save vendor details to start comparisons."
+                              />
                             ) : (
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {savedVendors.map((proposal: any) => (
@@ -1048,12 +1335,6 @@ export default function Home() {
                       </div>
                     )}
 
-                    {saveVendorDetailsError && (
-                      <p className="mt-4 text-sm text-red-300 bg-red-950/40 border border-red-700/40 rounded-lg px-3 py-2">
-                        {saveVendorDetailsError}
-                      </p>
-                    )}
-
                     {comparisonVendors.length > 0 && (
                       <div className="mt-6">
                         <VendorComparisonTable
@@ -1068,6 +1349,16 @@ export default function Home() {
                             })
                             alert(`Flagged ${requirementId} (${category}) for review.`)
                           }}
+                        />
+                      </div>
+                    )}
+
+                    {currentProject && selectedComparisonVendorIds.length === 0 && savedVendors.length > 0 && (
+                      <div className="mt-6">
+                        <EmptyState
+                          variant="vendors"
+                          title="No vendors selected for comparison"
+                          description="Use the 'Use For Comparison' button in a vendor panel to load the comparison table."
                         />
                       </div>
                     )}
@@ -1100,6 +1391,18 @@ export default function Home() {
                   projects={projects.map(p => ({ ...p as any, vendorCount: p.proposalCount || 0 }))}
                   onOpenProject={handleOpenProject}
                   onDeleteProject={handleRequestDeleteProject}
+                />
+              )}
+
+              {projects.length === 0 && (
+                <EmptyState
+                  variant="generic"
+                  title="No saved projects yet"
+                  description="Upload an RFP and save confirmed requirements to create your first tender project."
+                  actionLabel="Start New Review"
+                  onAction={() => {
+                    window.scrollTo({ top: 0, behavior: 'smooth' })
+                  }}
                 />
               )}
             </section>
@@ -1214,7 +1517,7 @@ export default function Home() {
         {/* Footer */}
         <footer className="mt-20 border-t border-legal-blue border-opacity-20 pt-12 text-center">
           <p className="text-gray-400 text-sm">
-            © 2024 Vettly - Intelligent Tender Compliance Validation. All rights reserved.
+            © 2026 Vettly - Intelligent Tender Compliance Validation. All rights reserved.
           </p>
         </footer>
       </main>

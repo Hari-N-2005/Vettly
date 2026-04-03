@@ -4,6 +4,7 @@ import { useAuthStore } from './stores/authStore'
 import Home from './pages/Home'
 import { Login } from './pages/Login'
 import { Signup } from './pages/Signup'
+import TenderWorkflowPage from './pages/TenderWorkflowPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token, isLoading } = useAuthStore()
@@ -94,6 +95,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Home />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/workflow"
+            element={
+              <ProtectedRoute>
+                <TenderWorkflowPage />
               </ProtectedRoute>
             }
           />

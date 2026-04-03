@@ -22,6 +22,21 @@ interface ProjectStore {
     metCount?: number
     partialCount?: number
     missingCount?: number
+    filename?: string
+    fileSize?: number
+    proposalText?: string
+    matchingCriteria?: unknown
+    requirementsSnapshot?: unknown
+    complianceResults?: Array<{
+      requirementId: string
+      status: 'Met' | 'Partially Met' | 'Missing'
+      confidence: number
+      matchedExcerpt?: string | null
+      explanation?: string | null
+      suggestedFollowUp?: string | null
+      flaggedForReview?: boolean
+      notes?: string | null
+    }>
   }) => void
   removeVendorProposal: (projectId: string, proposalId: string) => void
   clearCurrentProject: () => void
