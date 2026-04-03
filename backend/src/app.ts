@@ -1330,6 +1330,31 @@ const isGeminiHttpError = (error: unknown): error is GeminiHttpError => {
   )
 }
 
+const isGeminiRateLimitError = (error: unknown): boolean => {
+  if (isGeminiHttpError(error)) {
+    if (error.status === 429) {
+      return true
+    }
+
+    if (error.status === 503) {
+      return true
+    }
+
+    const body = (error.responseBody || '').toLowerCase()
+    return (
+      body.includes('resource_exhausted') ||
+      body.includes('quota') ||
+      body.includes('rate limit')
+    )
+  }
+
+  if (error instanceof Error) {
+    return /rate limit|resource exhausted|quota/i.test(error.message)
+  }
+
+  return false
+}
+
 const listGeminiGenerateContentModels = async (apiKey: string): Promise<string[]> => {
   const listEndpoint = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`
   const response = await fetch(listEndpoint)
@@ -1356,15 +1381,19 @@ const listGeminiGenerateContentModels = async (apiKey: string): Promise<string[]
 
 const getGeminiModelCandidates = async (
   configuredModel: string,
+  fallbackModel: string,
   apiKey: string
 ): Promise<string[]> => {
   const preferredOrder = [
     configuredModel,
+    fallbackModel,
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
     'gemini-2.0-flash',
     'gemini-2.0-flash-lite',
     'gemini-1.5-flash',
     'gemini-1.5-flash-8b',
-  ]
+  ].filter(Boolean)
 
   const discoveredModels = await listGeminiGenerateContentModels(apiKey)
   const discoveredSet = new Set(discoveredModels)
@@ -1423,7 +1452,7 @@ const callGeminiWithModel = async (
 
     if (response.status === 429) {
       if (attempt === maxAttempts) {
-        throw new Error('Rate limited by Gemini API after multiple retries.')
+        throw createGeminiHttpError(429, 'Rate limited by Gemini API after multiple retries.')
       }
 
       const retryAfterSeconds = parseRetryAfterSeconds(response.headers.get('retry-after'))
@@ -1465,8 +1494,9 @@ const callGeminiForRequirements = async (rfpText: string): Promise<Requirement[]
     throw new Error('GEMINI_API_KEY is not configured.')
   }
 
-  const configuredModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
-  const modelCandidates = await getGeminiModelCandidates(configuredModel, apiKey)
+  const configuredModel = process.env.GEMINI_PRIMARY_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+  const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash-lite'
+  const modelCandidates = await getGeminiModelCandidates(configuredModel, fallbackModel, apiKey)
 
   let lastError: unknown = null
 
@@ -1475,6 +1505,19 @@ const callGeminiForRequirements = async (rfpText: string): Promise<Requirement[]
       return await callGeminiWithModel(model, apiKey, rfpText)
     } catch (error) {
       lastError = error
+
+      // Fall back to configured fallback model only when primary is rate-limited.
+      if (
+        isGeminiRateLimitError(error) &&
+        model === configuredModel &&
+        fallbackModel &&
+        fallbackModel !== configuredModel
+      ) {
+        console.warn(
+          `[Gemini] Primary model ${configuredModel} rate-limited. Retrying with fallback ${fallbackModel}.`
+        )
+        continue
+      }
 
       // Fall back to another model only when model is unavailable.
       if (isGeminiHttpError(error) && error.status === 404) {
@@ -1541,7 +1584,7 @@ const callGeminiSemanticMatchWithModel = async (
 
     if (response.status === 429) {
       if (attempt === maxAttempts) {
-        throw new Error('Rate limited by Gemini API after multiple retries.')
+        throw createGeminiHttpError(429, 'Rate limited by Gemini API after multiple retries.')
       }
 
       const retryAfterSeconds = parseRetryAfterSeconds(response.headers.get('retry-after'))
@@ -1586,8 +1629,9 @@ const callGeminiForSemanticMatch = async (
     throw new Error('GEMINI_API_KEY is not configured.')
   }
 
-  const configuredModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
-  const modelCandidates = await getGeminiModelCandidates(configuredModel, apiKey)
+  const configuredModel = process.env.GEMINI_PRIMARY_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+  const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash-lite'
+  const modelCandidates = await getGeminiModelCandidates(configuredModel, fallbackModel, apiKey)
 
   let lastError: unknown = null
 
@@ -1596,6 +1640,18 @@ const callGeminiForSemanticMatch = async (
       return await callGeminiSemanticMatchWithModel(model, apiKey, requirement, proposalText)
     } catch (error) {
       lastError = error
+
+      if (
+        isGeminiRateLimitError(error) &&
+        model === configuredModel &&
+        fallbackModel &&
+        fallbackModel !== configuredModel
+      ) {
+        console.warn(
+          `[Gemini] Primary model ${configuredModel} rate-limited. Retrying with fallback ${fallbackModel}.`
+        )
+        continue
+      }
 
       if (isGeminiHttpError(error) && error.status === 404) {
         continue
@@ -1661,7 +1717,7 @@ const callGeminiRiskScanWithModel = async (
 
     if (response.status === 429) {
       if (attempt === maxAttempts) {
-        throw new Error('Rate limited by Gemini API after multiple retries.')
+        throw createGeminiHttpError(429, 'Rate limited by Gemini API after multiple retries.')
       }
 
       const retryAfterSeconds = parseRetryAfterSeconds(response.headers.get('retry-after'))
@@ -1706,8 +1762,9 @@ const callGeminiForRiskScan = async (
     throw new Error('GEMINI_API_KEY is not configured.')
   }
 
-  const configuredModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
-  const modelCandidates = await getGeminiModelCandidates(configuredModel, apiKey)
+  const configuredModel = process.env.GEMINI_PRIMARY_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+  const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash-lite'
+  const modelCandidates = await getGeminiModelCandidates(configuredModel, fallbackModel, apiKey)
 
   let lastError: unknown = null
 
@@ -1716,6 +1773,18 @@ const callGeminiForRiskScan = async (
       return await callGeminiRiskScanWithModel(model, apiKey, vendorProposalText, vendorName)
     } catch (error) {
       lastError = error
+
+      if (
+        isGeminiRateLimitError(error) &&
+        model === configuredModel &&
+        fallbackModel &&
+        fallbackModel !== configuredModel
+      ) {
+        console.warn(
+          `[Gemini] Primary model ${configuredModel} rate-limited. Retrying with fallback ${fallbackModel}.`
+        )
+        continue
+      }
 
       if (isGeminiHttpError(error) && error.status === 404) {
         continue
@@ -1938,8 +2007,9 @@ const callGeminiForBatchValidation = async (
     throw new Error('GEMINI_API_KEY is not configured.')
   }
 
-  const configuredModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
-  const modelCandidates = await getGeminiModelCandidates(configuredModel, apiKey)
+  const configuredModel = process.env.GEMINI_PRIMARY_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+  const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash-lite'
+  const modelCandidates = await getGeminiModelCandidates(configuredModel, fallbackModel, apiKey)
 
   let lastError: unknown = null
 
@@ -1948,6 +2018,18 @@ const callGeminiForBatchValidation = async (
       return await callGeminiSemanticMatchBatchWithModel(model, apiKey, requirements, proposalText)
     } catch (error) {
       lastError = error
+
+      if (
+        isGeminiRateLimitError(error) &&
+        model === configuredModel &&
+        fallbackModel &&
+        fallbackModel !== configuredModel
+      ) {
+        console.warn(
+          `[Gemini] Primary model ${configuredModel} rate-limited. Retrying with fallback ${fallbackModel}.`
+        )
+        continue
+      }
 
       if (isGeminiHttpError(error) && error.status === 404) {
         continue
@@ -2017,7 +2099,7 @@ const callGeminiSemanticMatchBatchWithModel = async (
 
     if (response.status === 429) {
       if (attempt === maxAttempts) {
-        throw new Error('Rate limited by Gemini API after multiple retries.')
+        throw createGeminiHttpError(429, 'Rate limited by Gemini API after multiple retries.')
       }
 
       const retryAfterSeconds = parseRetryAfterSeconds(response.headers.get('retry-after'))
