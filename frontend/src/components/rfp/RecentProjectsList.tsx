@@ -1,9 +1,10 @@
+import { useState } from 'react'
 import ProjectCard from './ProjectCard'
 import { Project } from '@/types'
 
 interface RecentProjectsListProps {
   projects: Project[]
-  onOpenProject: (projectId: string) => void
+  onOpenProject: (projectId: string) => Promise<void> | void
   onDeleteProject: (projectId: string) => void
 }
 
@@ -12,6 +13,17 @@ export default function RecentProjectsList({
   onOpenProject,
   onDeleteProject,
 }: RecentProjectsListProps) {
+  const [openingProjectId, setOpeningProjectId] = useState<string | null>(null)
+
+  const handleOpenProject = async (projectId: string) => {
+    setOpeningProjectId(projectId)
+    try {
+      await Promise.resolve(onOpenProject(projectId))
+    } finally {
+      setOpeningProjectId(null)
+    }
+  }
+
   if (projects.length === 0) {
     return (
       <div className="text-center py-12">
@@ -25,10 +37,19 @@ export default function RecentProjectsList({
 
   return (
     <div>
-      <h2 className="text-2xl font-bold text-gray-100 mb-6">Recent Projects</h2>
+      <h2 className="mb-6 flex items-center gap-2 text-2xl font-bold text-gray-100">
+        <span className="h-2.5 w-2.5 rounded-full bg-indigo-300" />
+        Recent Projects
+      </h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {projects.map(project => (
-          <ProjectCard key={project.id} project={project} onOpen={onOpenProject} onDelete={onDeleteProject} />
+          <ProjectCard
+            key={project.id}
+            project={project}
+            onOpen={handleOpenProject}
+            onDelete={onDeleteProject}
+            isOpening={openingProjectId === project.id}
+          />
         ))}
       </div>
     </div>

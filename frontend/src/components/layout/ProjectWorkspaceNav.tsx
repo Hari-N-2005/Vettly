@@ -22,10 +22,17 @@ export default function ProjectWorkspaceNav() {
   }
 
   return (
-    <section className="border-b border-blue-500/40 bg-gradient-to-r from-slate-950 via-blue-950/40 to-slate-950 px-4 py-3 shadow-[0_6px_20px_rgba(29,78,216,0.15)] sm:px-6">
+    <section className="relative border-y border-indigo-400/40 bg-gradient-to-r from-slate-950 via-indigo-900/35 to-slate-950 px-4 py-3 shadow-[0_8px_22px_rgba(67,56,202,0.18)] ring-1 ring-indigo-400/25 sm:px-6">
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-amber-300 via-indigo-400 to-blue-300" />
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="rounded-lg border border-blue-500/35 bg-slate-900/70 px-3 py-2">
-          <p className="text-xs uppercase tracking-[0.16em] text-blue-200/70">Project Workspace</p>
+        <div className="rounded-lg border border-indigo-300/35 bg-slate-900/80 px-3 py-2 shadow-[0_0_20px_rgba(99,102,241,0.14)]">
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
+            <p className="text-xs uppercase tracking-[0.16em] text-indigo-100">Project Workspace</p>
+            <span className="rounded-full border border-amber-300/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-100">
+              Active
+            </span>
+          </div>
           <p className="mt-1 text-sm text-slate-100">
             Active project: <span className="font-semibold">{currentProject.name}</span>
           </p>
@@ -37,10 +44,10 @@ export default function ProjectWorkspaceNav() {
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
-                `rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                `rounded-lg border px-3 py-1.5 text-sm font-semibold transition-all ${
                   isActive
-                    ? 'border-blue-400/70 bg-blue-500/35 text-white shadow-[0_0_0_1px_rgba(96,165,250,0.45)]'
-                    : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-blue-500/35 hover:text-slate-100'
+                    ? 'border-indigo-300/70 bg-indigo-500/30 text-white shadow-[0_0_0_1px_rgba(129,140,248,0.45),0_0_14px_rgba(129,140,248,0.18)]'
+                    : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-amber-300/45 hover:bg-slate-800 hover:text-slate-100'
                 }`
               }
             >

@@ -47,7 +47,6 @@ export default function ReviewView() {
       <AnalysisLoader
         isVisible={isLoading}
         title="Confirming requirements"
-        steps={['Reviewing extracted clauses...', 'Building requirement set...', 'Preparing validation phase...']}
       />
 
       <ErrorToast

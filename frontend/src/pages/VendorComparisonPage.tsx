@@ -221,22 +221,25 @@ export default function VendorComparisonPage() {
 
   return (
     <div className="space-y-6">
-      <section>
-        <h2 className="text-2xl font-semibold text-slate-100">Vendor Comparison</h2>
+      <section className="rounded-xl border border-cyan-500/30 bg-gradient-to-r from-slate-900 via-cyan-900/20 to-slate-900 p-5">
+        <h2 className="flex items-center gap-2 text-2xl font-semibold text-slate-100">
+          <span className="h-2.5 w-2.5 rounded-full bg-cyan-300" />
+          Vendor Comparison
+        </h2>
         <p className="mt-1 text-sm text-slate-400">
           Compare vendor compliance performance for {currentProject.name} with the same deep-dive view from RFP Uploads.
         </p>
       </section>
 
-      <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+      <section className="rounded-xl border border-cyan-500/20 bg-slate-900/95 p-5">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-slate-100">Included Vendors</h3>
+          <h3 className="text-lg font-semibold text-cyan-100">Included Vendors</h3>
           <p className="text-sm text-slate-400">{selectedComparisonVendorIds.length} selected</p>
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
           {currentProject.proposals.map(proposal => (
-            <article key={proposal.id} className="rounded-lg border border-slate-700 bg-slate-950 p-4">
+            <article key={proposal.id} className="rounded-lg border border-cyan-500/18 bg-gradient-to-b from-slate-900 to-slate-950 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h4 className="text-lg font-semibold text-slate-100">{proposal.vendorName}</h4>

@@ -1,59 +1,50 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 interface AnalysisLoaderProps {
   isVisible: boolean
   title?: string
-  steps?: string[]
-  intervalMs?: number
   showPercentage?: boolean
   progress?: number
   backdropClassName?: string
   panelClassName?: string
 }
 
-const defaultSteps = [
-  'Extracting text...',
-  'Identifying requirements...',
-  'Categorising clauses...',
-  'Cross-checking obligations...',
-  'Preparing analysis results...',
-]
-
 export default function AnalysisLoader({
   isVisible,
   title = 'Running tender analysis',
-  steps = defaultSteps,
-  intervalMs = 1400,
   showPercentage = true,
   progress,
   backdropClassName = '',
   panelClassName = '',
 }: AnalysisLoaderProps) {
-  const [activeStepIndex, setActiveStepIndex] = useState(0)
-
-  const safeSteps = useMemo(() => (steps.length > 0 ? steps : defaultSteps), [steps])
+  const [simulatedProgress, setSimulatedProgress] = useState(0)
 
   useEffect(() => {
     if (!isVisible) {
-      setActiveStepIndex(0)
+      setSimulatedProgress(0)
       return
     }
 
     const timer = window.setInterval(() => {
-      setActiveStepIndex(prev => (prev + 1) % safeSteps.length)
-    }, intervalMs)
+      setSimulatedProgress(prev => {
+        if (prev >= 92) {
+          return 92
+        }
+
+        const nextStep = prev < 35 ? 3 : prev < 70 ? 2 : 1
+        return Math.min(92, prev + nextStep)
+      })
+    }, 500)
 
     return () => window.clearInterval(timer)
-  }, [intervalMs, isVisible, safeSteps.length])
+  }, [isVisible])
+
+  const computedProgress =
+    typeof progress === 'number' ? Math.max(0, Math.min(100, progress)) : simulatedProgress
 
   if (!isVisible) {
     return null
   }
-
-  const computedProgress =
-    typeof progress === 'number'
-      ? Math.max(0, Math.min(100, progress))
-      : Math.round(((activeStepIndex + 1) / safeSteps.length) * 100)
 
   return (
     <div
@@ -82,30 +73,9 @@ export default function AnalysisLoader({
           {showPercentage && <span className="font-semibold text-legal-accent">{computedProgress}%</span>}
         </div>
 
-        <ul className="space-y-2">
-          {safeSteps.map((step, index) => {
-            const isActive = index === activeStepIndex
-            const isCompleted = index < activeStepIndex
-
-            return (
-              <li
-                key={`${step}-${index}`}
-                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-all ${
-                  isActive
-                    ? 'border-legal-accent/50 bg-legal-accent/15 text-legal-accent'
-                    : isCompleted
-                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                      : 'border-legal-blue/20 bg-legal-dark/50 text-gray-400'
-                }`}
-              >
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-current text-[11px] font-semibold">
-                  {isCompleted ? 'OK' : index + 1}
-                </span>
-                <span>{step}</span>
-              </li>
-            )
-          })}
-        </ul>
+        <div className="rounded-lg border border-legal-blue/20 bg-legal-dark/50 px-3 py-2 text-sm text-gray-400">
+          Processing document and generating analysis...
+        </div>
       </div>
     </div>
   )

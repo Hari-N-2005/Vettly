@@ -4,9 +4,10 @@ interface ProjectCardProps {
   project: Project
   onOpen: (projectId: string) => void
   onDelete: (projectId: string) => void
+  isOpening?: boolean
 }
 
-export default function ProjectCard({ project, onOpen, onDelete }: ProjectCardProps) {
+export default function ProjectCard({ project, onOpen, onDelete, isOpening = false }: ProjectCardProps) {
   const formatDate = (date: Date): string => {
     return new Intl.DateTimeFormat('en-US', {
       month: 'short',
@@ -31,7 +32,7 @@ export default function ProjectCard({ project, onOpen, onDelete }: ProjectCardPr
   const status = getStatusBadge()
 
   return (
-    <div className="bg-legal-slate rounded-lg border border-legal-blue border-opacity-20 hover:border-legal-accent hover:border-opacity-50 transition-all duration-300 p-6 hover:shadow-xl hover:shadow-legal-accent hover:shadow-opacity-20">
+    <div className="rounded-lg border border-slate-700/80 bg-gradient-to-b from-slate-800 to-slate-900 p-6 transition-all duration-300 hover:border-indigo-400/40 hover:shadow-xl hover:shadow-indigo-500/10">
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1 min-w-0">
           <h3 className="text-lg font-semibold text-gray-100 truncate">{project.name}</h3>
@@ -51,7 +52,7 @@ export default function ProjectCard({ project, onOpen, onDelete }: ProjectCardPr
           {project.complianceScore !== undefined && (
             <div>
               <span className="text-gray-400">Compliance: </span>
-              <span className="font-semibold text-legal-gold">{project.complianceScore}%</span>
+              <span className="font-semibold text-amber-300">{project.complianceScore}%</span>
             </div>
           )}
         </div>
@@ -60,14 +61,23 @@ export default function ProjectCard({ project, onOpen, onDelete }: ProjectCardPr
       <div className="grid grid-cols-2 gap-3">
         <button
           onClick={() => onOpen(project.id)}
-          className="w-full px-4 py-2.5 bg-legal-accent text-white rounded-lg hover:bg-legal-blue active:scale-95 transition-all duration-300 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-legal-accent focus:ring-offset-2 focus:ring-offset-legal-slate"
+          disabled={isOpening}
+          className="w-full px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg hover:from-blue-500/90 hover:to-indigo-500/90 active:scale-95 transition-all duration-300 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-slate-900"
         >
-          View Project
+          {isOpening ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="h-4 w-4 rounded-full border-2 border-white/50 border-t-white animate-spin" />
+              Loading...
+            </span>
+          ) : (
+            'View Project'
+          )}
         </button>
 
         <button
           onClick={() => onDelete(project.id)}
-          className="w-full px-4 py-2.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 rounded-lg hover:bg-rose-500/30 active:scale-95 transition-all duration-300 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-rose-400 focus:ring-offset-2 focus:ring-offset-legal-slate"
+          disabled={isOpening}
+          className="w-full px-4 py-2.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 rounded-lg hover:bg-rose-500/30 active:scale-95 transition-all duration-300 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-rose-400 focus:ring-offset-2 focus:ring-offset-slate-900"
         >
           Delete
         </button>

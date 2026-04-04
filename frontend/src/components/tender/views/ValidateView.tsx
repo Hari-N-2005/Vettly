@@ -60,7 +60,6 @@ export default function ValidateView() {
       <AnalysisLoader
         isVisible={isLoading}
         title="Validating vendor"
-        steps={['Mapping requirement evidence...', 'Scoring compliance...', 'Preparing comparison-ready result...']}
       />
 
       <ErrorToast

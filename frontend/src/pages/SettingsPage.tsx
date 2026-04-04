@@ -16,19 +16,22 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <section>
-        <h2 className="text-2xl font-semibold text-slate-100">Settings</h2>
+      <section className="rounded-xl border border-blue-500/25 bg-gradient-to-r from-slate-900 via-blue-900/20 to-slate-900 p-5">
+        <h2 className="flex items-center gap-2 text-2xl font-semibold text-slate-100">
+          <span className="h-2.5 w-2.5 rounded-full bg-blue-300" />
+          Settings
+        </h2>
         <p className="mt-1 text-sm text-slate-400">
           Workspace profile and interface defaults for your procurement team.
         </p>
       </section>
 
-      <section className="rounded-xl border border-slate-800 bg-slate-900 shadow-sm">
-        <header className="border-b border-slate-800 px-5 py-4">
-          <h3 className="text-lg font-semibold text-slate-100">User Profile</h3>
+      <section className="rounded-xl border border-blue-500/20 bg-slate-900/95 shadow-sm">
+        <header className="border-b border-blue-500/15 px-5 py-4">
+          <h3 className="text-lg font-semibold text-blue-100">User Profile</h3>
         </header>
 
-        <dl className="divide-y divide-slate-800">
+        <dl className="divide-y divide-blue-500/10">
           {environment.map(item => (
             <div key={item.key} className="flex items-center justify-between px-5 py-4 text-sm">
               <dt className="text-slate-400">{item.key}</dt>

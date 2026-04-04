@@ -41,23 +41,26 @@ export default function RequirementsPage() {
 
   return (
     <div className="space-y-6">
-      <section>
-        <h2 className="text-2xl font-semibold text-slate-100">Requirements</h2>
+      <section className="rounded-xl border border-indigo-500/30 bg-gradient-to-r from-slate-900 via-indigo-900/20 to-slate-900 p-5">
+        <h2 className="flex items-center gap-2 text-2xl font-semibold text-slate-100">
+          <span className="h-2.5 w-2.5 rounded-full bg-indigo-300" />
+          Requirements
+        </h2>
         <p className="mt-1 text-sm text-slate-400">
           Structured requirement view for {currentProject.name}, grouped by compliance category.
         </p>
       </section>
 
       {groupedRequirements.map(group => (
-        <section key={group.category} className="rounded-xl border border-slate-800 bg-slate-900 shadow-sm">
-          <header className="border-b border-slate-800 px-5 py-4">
-            <h3 className="text-lg font-semibold text-slate-100">{group.category}</h3>
+        <section key={group.category} className="rounded-xl border border-indigo-500/20 bg-slate-900/95 shadow-sm">
+          <header className="border-b border-indigo-500/15 px-5 py-4">
+            <h3 className="text-lg font-semibold text-indigo-100">{group.category}</h3>
             <p className="text-sm text-slate-400">{group.items.length} requirements</p>
           </header>
 
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-950">
+              <thead className="bg-indigo-950/20">
                 <tr>
                   <th className="px-4 py-3 text-left font-medium text-slate-400">Requirement</th>
                   <th className="px-4 py-3 text-left font-medium text-slate-400">Priority</th>
@@ -66,7 +69,7 @@ export default function RequirementsPage() {
               </thead>
               <tbody>
                 {group.items.map((item) => (
-                  <tr key={item.id} className="border-t border-slate-800">
+                  <tr key={item.id} className="border-t border-indigo-500/10">
                     <td className="px-4 py-3 text-slate-200">{item.text}</td>
                     <td className="px-4 py-3 text-slate-300">{item.priority || 'Standard'}</td>
                     <td className="px-4 py-3 text-slate-300">{item.order}</td>

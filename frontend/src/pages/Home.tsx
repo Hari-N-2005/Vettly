@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { useProjectStore } from '../stores/projectStore'
 import { ComplianceStatus, RequirementCategory } from '@/types'
@@ -27,6 +28,7 @@ const normalizeCategory = (category?: string): RequirementCategory => {
 }
 
 export default function Home() {
+  const location = useLocation()
   const { user } = useAuthStore()
   const { dispatch: tenderDispatch } = useTender()
   const {
@@ -61,6 +63,7 @@ export default function Home() {
   const [saveVendorDetailsError, setSaveVendorDetailsError] = useState<string>('')
   const [deleteProjectError, setDeleteProjectError] = useState<string>('')
   const [deleteVendorError, setDeleteVendorError] = useState<string>('')
+  const [isDeletingProject, setIsDeletingProject] = useState(false)
   const [isDeletingVendor, setIsDeletingVendor] = useState(false)
   const [hasSavedVendorDetails, setHasSavedVendorDetails] = useState(false)
   const [projectName, setProjectName] = useState('')
@@ -72,6 +75,7 @@ export default function Home() {
   const [pendingDeleteVendorId, setPendingDeleteVendorId] = useState<string | null>(null)
   const [showSavedVendors, setShowSavedVendors] = useState(false)
   const [selectedComparisonVendorIds, setSelectedComparisonVendorIds] = useState<string[]>([])
+  const recentProjectsRef = useRef<HTMLElement | null>(null)
   const {
     progress: validationProgress,
     complete: completeValidationProgress,
@@ -148,6 +152,20 @@ export default function Home() {
 
     return undefined
   }, [isValidatingVendor, resetValidationProgress, validationResult])
+
+  useEffect(() => {
+    const routeState = location.state as { scrollToRecentProjects?: boolean } | null
+
+    if (!routeState?.scrollToRecentProjects) {
+      return
+    }
+
+    const timerId = window.setTimeout(() => {
+      recentProjectsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 120)
+
+    return () => window.clearTimeout(timerId)
+  }, [location.key, location.state])
 
   const savedVendors = useMemo(() => {
     if (!currentProject?.proposals?.length) {
@@ -476,6 +494,8 @@ export default function Home() {
       return
     }
 
+    setIsDeletingProject(true)
+
     try {
       await deleteProject(pendingDeleteProjectId)
 
@@ -503,6 +523,8 @@ export default function Home() {
       setDeleteProjectError('')
     } catch (error: any) {
       setDeleteProjectError(error.message || 'Failed to delete project.')
+    } finally {
+      setIsDeletingProject(false)
     }
   }
 
@@ -536,15 +558,13 @@ export default function Home() {
     setIsSavingProject(true)
     setSaveProjectError('')
     try {
-      await createProject(projectName, confirmedRequirements, projectDescription)
+      const createdProject = await createProject(projectName, confirmedRequirements, projectDescription)
       setProjectName('')
       setProjectDescription('')
       setShowSaveDialog(false)
-      setExtractedRequirements([])
-      setConfirmedRequirements([])
-      setHasValidatedVendor(false)
-      setHasScannedRisks(false)
-      tenderDispatch({ type: 'RESET' })
+
+      // Keep the workflow context visible by loading the saved project immediately.
+      await fetchProject(createdProject.id)
       await fetchProjects()
     } catch (error: any) {
       setSaveProjectError(error.message || 'Failed to save project')
@@ -710,27 +730,6 @@ export default function Home() {
       ? 'Scanning proposal risks'
       : 'Saving vendor results'
 
-  const analysisSteps = isValidatingVendor
-    ? [
-        'Extracting proposal text...',
-        'Matching requirements...',
-        'Scoring compliance...',
-        'Preparing validation summary...',
-      ]
-    : isScanningRisks
-      ? [
-          'Extracting proposal text...',
-          'Detecting risky language...',
-          'Classifying risk severity...',
-          'Compiling risk panel...',
-        ]
-      : [
-          'Preparing vendor payload...',
-          'Storing compliance results...',
-          'Saving tender comparison data...',
-          'Finalizing vendor record...',
-        ]
-
   const activeError =
     validationError
       ? { key: 'validation', message: validationError }
@@ -789,7 +788,6 @@ export default function Home() {
       <AnalysisLoader
         isVisible={isAnalysisLoading}
         title={analysisTitle}
-        steps={analysisSteps}
         progress={isValidatingVendor ? validationProgress : undefined}
       />
 
@@ -806,7 +804,7 @@ export default function Home() {
       />
 
       <section className="rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-sm">
-        <div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">RFP Uploads</p>
             <h1 className="mt-2 text-3xl font-semibold text-slate-100">Tender Compliance Workspace</h1>
@@ -814,32 +812,44 @@ export default function Home() {
               Extract requirements from tender documents, validate vendor submissions, and surface risks in a structured review flow.
             </p>
           </div>
+
+          {currentProject && (
+            <button
+              type="button"
+              onClick={handleBackToProjects}
+              className="rounded-lg border border-blue-500/35 bg-blue-500/10 px-4 py-2.5 text-sm font-semibold text-blue-100 hover:bg-blue-500/20"
+            >
+              Upload New RFP
+            </button>
+          )}
         </div>
       </section>
 
-      <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <article className="rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Signed In</p>
-          <p className="mt-2 text-sm font-medium text-slate-100">{user?.email || 'Active user'}</p>
-          <p className="mt-2 text-sm text-slate-400">Workspace access is scoped to your saved tender projects.</p>
-        </article>
-        <article className="rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Requirements</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-100">{confirmedRequirements.length}</p>
-          <p className="mt-2 text-sm text-slate-400">Confirmed requirements ready for compliance checks.</p>
-        </article>
-        <article className="rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Saved Vendors</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-100">{savedVendors.length}</p>
-          <p className="mt-2 text-sm text-slate-400">Vendor submissions available for comparison.</p>
-        </article>
-      </section>
+      {currentProject && (
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <article className="rounded-xl border border-blue-500/25 bg-slate-900 p-5 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Signed In</p>
+            <p className="mt-2 text-sm font-medium text-slate-100">{user?.email || 'Active user'}</p>
+            <p className="mt-2 text-sm text-slate-400">Workspace access is scoped to your saved tender projects.</p>
+          </article>
+          <article className="rounded-xl border border-indigo-500/25 bg-slate-900 p-5 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Requirements</p>
+            <p className="mt-2 text-2xl font-semibold text-indigo-100">{confirmedRequirements.length}</p>
+            <p className="mt-2 text-sm text-slate-400">Confirmed requirements ready for compliance checks.</p>
+          </article>
+          <article className="rounded-xl border border-amber-500/25 bg-slate-900 p-5 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Saved Vendors</p>
+            <p className="mt-2 text-2xl font-semibold text-amber-100">{savedVendors.length}</p>
+            <p className="mt-2 text-sm text-slate-400">Vendor submissions available for comparison.</p>
+          </article>
+        </section>
+      )}
 
       <main>
         {/* Active Project Banner */}
         {currentProject && (
           <section className="mb-8">
-            <div className="rounded-xl border border-blue-500/30 bg-slate-900 p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="rounded-xl border border-blue-500/30 bg-slate-900 p-5">
               <div>
                 <p className="text-xs uppercase tracking-wider text-blue-200">Loaded Project</p>
                 <h2 className="text-2xl font-bold text-slate-100 mt-1">{currentProject.name}</h2>
@@ -847,21 +857,17 @@ export default function Home() {
                   {currentProject.requirements.length} requirements preloaded. You can upload a vendor proposal now.
                 </p>
               </div>
-              <button
-                onClick={handleBackToProjects}
-                className="px-4 py-2 text-blue-200 hover:text-blue-100 transition-colors border border-blue-500/30 rounded-lg"
-              >
-                Back to Project List
-              </button>
             </div>
           </section>
         )}
 
         <>
             {/* Upload Section */}
-            <section className="mb-16">
-              <RFPUploadForm onRequirementsExtracted={handleRequirementsExtracted} />
-            </section>
+            {!currentProject && (
+              <section className="mb-16">
+                <RFPUploadForm onRequirementsExtracted={handleRequirementsExtracted} />
+              </section>
+            )}
 
             {extractionMeta && extractedRequirements.length === 0 && (
               <section className="mb-16">
@@ -1335,7 +1341,7 @@ export default function Home() {
             )}
 
             {/* Recent Projects Section */}
-            <section>
+            <section ref={recentProjectsRef}>
               {projects.length > 0 && (
                 <RecentProjectsList
                   projects={projects.map(p => ({ ...p as any, vendorCount: p.proposalCount || 0 }))}
@@ -1362,6 +1368,9 @@ export default function Home() {
                 <div
                   className="absolute inset-0 bg-black/60"
                   onClick={() => {
+                    if (isDeletingProject) {
+                      return
+                    }
                     setShowDeleteDialog(false)
                     setPendingDeleteProjectId(null)
                     setDeleteProjectError('')
@@ -1387,20 +1396,32 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => {
+                        if (isDeletingProject) {
+                          return
+                        }
                         setShowDeleteDialog(false)
                         setPendingDeleteProjectId(null)
                         setDeleteProjectError('')
                       }}
-                      className="rounded-lg border border-legal-blue/40 bg-legal-slate px-4 py-2.5 text-sm font-semibold text-gray-100 transition-colors hover:bg-legal-blue/20"
+                      disabled={isDeletingProject}
+                      className="rounded-lg border border-legal-blue/40 bg-legal-slate px-4 py-2.5 text-sm font-semibold text-gray-100 transition-colors hover:bg-legal-blue/20 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       Cancel
                     </button>
                     <button
                       type="button"
                       onClick={handleDeleteProject}
-                      className="rounded-lg border border-rose-500/50 bg-rose-500/20 px-4 py-2.5 text-sm font-semibold text-rose-200 transition-colors hover:bg-rose-500/30"
+                      disabled={isDeletingProject}
+                      className="rounded-lg border border-rose-500/50 bg-rose-500/20 px-4 py-2.5 text-sm font-semibold text-rose-200 transition-colors hover:bg-rose-500/30 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      Delete Project
+                      {isDeletingProject ? (
+                        <span className="inline-flex items-center gap-2">
+                          <span className="h-4 w-4 rounded-full border-2 border-rose-100/40 border-t-rose-100 animate-spin" />
+                          Deleting...
+                        </span>
+                      ) : (
+                        'Delete Project'
+                      )}
                     </button>
                   </div>
                 </div>
