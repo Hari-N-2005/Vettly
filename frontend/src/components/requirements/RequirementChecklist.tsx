@@ -138,7 +138,7 @@ export default function RequirementChecklist({ requirements, onConfirm }: Requir
   }
 
   return (
-    <div className="bg-legal-slate/60 border border-legal-blue/30 rounded-xl shadow-2xl overflow-hidden">
+    <div className="bg-legal-slate/60 border border-legal-blue/30 rounded-xl shadow-2xl overflow-hidden w-full max-w-full">
       <div className="p-6 border-b border-legal-blue/20">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
@@ -212,22 +212,22 @@ export default function RequirementChecklist({ requirements, onConfirm }: Requir
       </div>
 
       <div className="overflow-x-auto">
-        <table className="min-w-full">
+        <table className="min-w-[680px] w-full lg:min-w-full">
           <thead className="bg-legal-dark/90">
             <tr>
               <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-400 w-16">
                 Include
               </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-400 min-w-[360px]">
+              <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-400 min-w-[260px] lg:min-w-[360px]">
                 Requirement
               </th>
               <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-400 w-40">
                 Category
               </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-400 w-36">
+              <th className="hidden md:table-cell text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-400 w-36">
                 Priority
               </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-400 min-w-[260px]">
+              <th className="hidden lg:table-cell text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-400 min-w-[260px]">
                 Source Excerpt
               </th>
             </tr>
@@ -298,7 +298,7 @@ export default function RequirementChecklist({ requirements, onConfirm }: Requir
                     </span>
                   </td>
 
-                  <td className="px-4 py-4">
+                  <td className="hidden md:table-cell px-4 py-4">
                     <span
                       className={`inline-flex px-2.5 py-1 rounded-full text-xs border ${priorityBadgeStyles[item.priority]}`}
                     >
@@ -306,7 +306,7 @@ export default function RequirementChecklist({ requirements, onConfirm }: Requir
                     </span>
                   </td>
 
-                  <td className="px-4 py-4 relative">
+                  <td className="hidden lg:table-cell px-4 py-4 relative">
                     <div className="text-sm text-gray-300">{sourcePreview}</div>
                     <button
                       type="button"

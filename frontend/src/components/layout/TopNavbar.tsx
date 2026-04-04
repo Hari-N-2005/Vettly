@@ -3,7 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useProjectStore } from '@/stores/projectStore'
 
-export default function TopNavbar() {
+interface TopNavbarProps {
+  onOpenMobileMenu?: () => void
+}
+
+export default function TopNavbar({ onOpenMobileMenu }: TopNavbarProps) {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
   const { projects, fetchProjects, fetchProject } = useProjectStore()
@@ -75,8 +79,17 @@ export default function TopNavbar() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/80 backdrop-blur">
-      <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6">
-        <div ref={searchContainerRef} className="relative w-full max-w-xl">
+      <div className="flex h-16 items-center justify-between gap-2 px-3 sm:gap-3 sm:px-6">
+        <button
+          type="button"
+          onClick={onOpenMobileMenu}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-slate-200 lg:hidden"
+          aria-label="Open menu"
+        >
+          <span className="text-lg leading-none">≡</span>
+        </button>
+
+        <div ref={searchContainerRef} className="relative min-w-0 flex-1 max-w-xl">
           <form onSubmit={handleSearch}>
             <label htmlFor="dashboard-search" className="sr-only">
               Search
@@ -90,7 +103,7 @@ export default function TopNavbar() {
               }}
               onFocus={() => setIsSearchOpen(true)}
               placeholder="Search saved projects"
-              className="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 sm:px-4"
             />
           </form>
 
@@ -128,7 +141,7 @@ export default function TopNavbar() {
           )}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           <div className="hidden sm:flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5">
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-indigo-500/25 text-xs font-semibold text-indigo-100">
               {userInitials || 'VT'}
@@ -145,7 +158,7 @@ export default function TopNavbar() {
               logout()
               navigate('/login')
             }}
-            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 hover:text-slate-100"
+            className="hidden rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 hover:text-slate-100 sm:inline-flex"
           >
             Logout
           </button>
