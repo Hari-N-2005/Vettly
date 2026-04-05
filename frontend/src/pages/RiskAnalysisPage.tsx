@@ -39,10 +39,7 @@ export default function RiskAnalysisPage() {
   return (
     <div className="space-y-6">
       <section className="rounded-xl border border-amber-500/30 bg-gradient-to-r from-slate-900 via-amber-900/20 to-slate-900 p-5">
-        <h2 className="flex items-center gap-2 text-2xl font-semibold text-slate-100">
-          <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
-          Risk Analysis
-        </h2>
+        <h2 className="text-2xl font-semibold text-slate-100">Risk Analysis</h2>
         <p className="mt-1 text-sm text-slate-400">
           Compliance gap risk indicators based on missing requirements for {currentProject.name}.
         </p>

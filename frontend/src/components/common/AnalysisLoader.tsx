@@ -53,12 +53,9 @@ export default function AnalysisLoader({
       className={`fixed inset-0 z-[120] flex items-center justify-center bg-legal-dark/80 backdrop-blur-sm ${backdropClassName}`}
     >
       <div className={`w-full max-w-xl rounded-2xl border border-legal-blue/30 bg-legal-slate/95 p-6 shadow-2xl ${panelClassName}`}>
-        <div className="mb-4 flex items-center gap-3">
-          <div className="h-8 w-8 rounded-full border-2 border-legal-accent border-t-transparent animate-spin" />
-          <div>
-            <p className="text-lg font-semibold text-gray-100">{title}</p>
-            <p className="text-xs text-gray-400">Please wait while AI processes your tender data.</p>
-          </div>
+        <div className="mb-4">
+          <p className="text-lg font-semibold text-gray-100">{title}</p>
+          <p className="text-xs text-gray-400">Please wait while AI processes your tender data.</p>
         </div>
 
         <div className="mb-3 h-2 overflow-hidden rounded-full border border-legal-blue/20 bg-legal-dark">

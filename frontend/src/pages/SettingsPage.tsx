@@ -17,10 +17,7 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <section className="rounded-xl border border-blue-500/25 bg-gradient-to-r from-slate-900 via-blue-900/20 to-slate-900 p-5">
-        <h2 className="flex items-center gap-2 text-2xl font-semibold text-slate-100">
-          <span className="h-2.5 w-2.5 rounded-full bg-blue-300" />
-          Settings
-        </h2>
+        <h2 className="text-2xl font-semibold text-slate-100">Settings</h2>
         <p className="mt-1 text-sm text-slate-400">
           Workspace profile and interface defaults for your procurement team.
         </p>

@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
+import Brand from '@/components/common/Brand'
 
 const navItems = [
   { label: 'Dashboard', to: '/dashboard' },
@@ -21,7 +22,7 @@ export default function Sidebar({ isMobileOpen = false, onCloseMobile }: Sidebar
     <>
       <aside className="hidden lg:flex lg:w-72 lg:flex-col border-r border-slate-800 bg-gradient-to-b from-slate-950 via-slate-950 to-indigo-950/40">
         <div className="px-6 py-6 border-b border-slate-800">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Vettly</p>
+          <Brand sizeClassName="h-8 w-8" textClassName="text-base font-semibold uppercase tracking-[0.22em] text-slate-300" />
           <h1 className="mt-2 text-2xl font-semibold text-slate-100">Tender Intelligence</h1>
           <p className="mt-2 text-sm text-slate-400">Enterprise procurement workspace</p>
         </div>
@@ -40,7 +41,6 @@ export default function Sidebar({ isMobileOpen = false, onCloseMobile }: Sidebar
                 }`
               }
             >
-              <span className="mr-2 h-1.5 w-1.5 rounded-full bg-current opacity-80" />
               {item.label}
             </NavLink>
           ))}
@@ -65,7 +65,7 @@ export default function Sidebar({ isMobileOpen = false, onCloseMobile }: Sidebar
       >
         <div className="flex items-center justify-between border-b border-slate-800 px-6 py-6">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Vettly</p>
+            <Brand sizeClassName="h-8 w-8" textClassName="text-base font-semibold uppercase tracking-[0.22em] text-slate-300" />
             <h1 className="mt-2 text-xl font-semibold text-slate-100">Tender Intelligence</h1>
           </div>
           <button
@@ -93,7 +93,6 @@ export default function Sidebar({ isMobileOpen = false, onCloseMobile }: Sidebar
                 }`
               }
             >
-              <span className="mr-2 h-1.5 w-1.5 rounded-full bg-current opacity-80" />
               {item.label}
             </NavLink>
           ))}

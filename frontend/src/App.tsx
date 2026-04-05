@@ -20,7 +20,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-legal-dark">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-legal-accent mx-auto mb-4"></div>
           <p className="text-gray-400">Loading...</p>
         </div>
         <BackendSleepNotice isActive />
@@ -42,7 +41,6 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-legal-dark">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-legal-accent mx-auto mb-4"></div>
           <p className="text-gray-400">Loading...</p>
         </div>
         <BackendSleepNotice isActive />
@@ -72,7 +70,6 @@ function App() {
     return (
       <div className="flex items-center justify-center min-h-screen bg-legal-dark">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-legal-accent mx-auto mb-4"></div>
           <p className="text-gray-400">Loading...</p>
         </div>
         <BackendSleepNotice isActive />

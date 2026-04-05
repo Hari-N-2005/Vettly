@@ -65,10 +65,7 @@ export default function ProjectCard({ project, onOpen, onDelete, isOpening = fal
           className="w-full px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg hover:from-blue-500/90 hover:to-indigo-500/90 active:scale-95 transition-all duration-300 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-slate-900"
         >
           {isOpening ? (
-            <span className="inline-flex items-center gap-2">
-              <span className="h-4 w-4 rounded-full border-2 border-white/50 border-t-white animate-spin" />
-              Loading...
-            </span>
+            <span>Loading...</span>
           ) : (
             'View Project'
           )}

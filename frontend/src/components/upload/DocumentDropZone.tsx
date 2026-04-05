@@ -98,11 +98,7 @@ export default function DocumentDropZone({
         <div className="flex flex-col items-center gap-3">
           {/* Upload Icon */}
           <div className="text-4xl">
-            {isLoading ? (
-              <div className="w-10 h-10 border-4 border-legal-accent border-t-transparent rounded-full animate-spin mx-auto" />
-            ) : (
-              <span>📄</span>
-            )}
+            {isLoading ? <span>Uploading</span> : <span>📄</span>}
           </div>
 
           <div>

@@ -222,10 +222,7 @@ export default function VendorComparisonPage() {
   return (
     <div className="space-y-6">
       <section className="rounded-xl border border-cyan-500/30 bg-gradient-to-r from-slate-900 via-cyan-900/20 to-slate-900 p-5">
-        <h2 className="flex items-center gap-2 text-2xl font-semibold text-slate-100">
-          <span className="h-2.5 w-2.5 rounded-full bg-cyan-300" />
-          Vendor Comparison
-        </h2>
+        <h2 className="text-2xl font-semibold text-slate-100">Vendor Comparison</h2>
         <p className="mt-1 text-sm text-slate-400">
           Compare vendor compliance performance for {currentProject.name} with the same deep-dive view from RFP Uploads.
         </p>

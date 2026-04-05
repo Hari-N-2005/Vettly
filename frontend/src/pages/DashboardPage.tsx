@@ -55,10 +55,7 @@ export default function DashboardPage() {
       </section>
 
       <section className="rounded-xl border border-indigo-400/35 bg-gradient-to-r from-slate-900/95 via-indigo-900/20 to-slate-900 p-5 shadow-[0_10px_24px_rgba(79,70,229,0.16)] ring-1 ring-indigo-400/20">
-        <h3 className="flex items-center gap-2 text-lg font-semibold text-slate-100">
-          <span className="h-2 w-2 rounded-full bg-indigo-300" />
-          Quick Actions
-        </h3>
+        <h3 className="text-lg font-semibold text-slate-100">Quick Actions</h3>
         <p className="mt-1 text-sm text-slate-400">
           Requirements, comparison, and risk actions are available after selecting an active project.
         </p>

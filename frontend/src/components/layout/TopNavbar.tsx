@@ -123,10 +123,7 @@ export default function TopNavbar({ onOpenMobileMenu }: TopNavbarProps) {
                       >
                         <span className="truncate">{project.name}</span>
                         {loadingProjectId === project.id ? (
-                          <span className="inline-flex items-center gap-2 text-xs text-blue-200">
-                            <span className="h-3.5 w-3.5 rounded-full border-2 border-blue-200/40 border-t-blue-200 animate-spin" />
-                            Loading
-                          </span>
+                          <span className="text-xs text-blue-200">Loading</span>
                         ) : (
                           <span className="text-xs text-slate-500">{new Date(project.createdAt).toLocaleDateString()}</span>
                         )}

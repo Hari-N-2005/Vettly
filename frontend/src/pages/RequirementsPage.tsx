@@ -42,10 +42,7 @@ export default function RequirementsPage() {
   return (
     <div className="space-y-6">
       <section className="rounded-xl border border-indigo-500/30 bg-gradient-to-r from-slate-900 via-indigo-900/20 to-slate-900 p-5">
-        <h2 className="flex items-center gap-2 text-2xl font-semibold text-slate-100">
-          <span className="h-2.5 w-2.5 rounded-full bg-indigo-300" />
-          Requirements
-        </h2>
+        <h2 className="text-2xl font-semibold text-slate-100">Requirements</h2>
         <p className="mt-1 text-sm text-slate-400">
           Structured requirement view for {currentProject.name}, grouped by compliance category.
         </p>

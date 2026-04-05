@@ -1415,10 +1415,7 @@ export default function Home() {
                       className="rounded-lg border border-rose-500/50 bg-rose-500/20 px-4 py-2.5 text-sm font-semibold text-rose-200 transition-colors hover:bg-rose-500/30 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       {isDeletingProject ? (
-                        <span className="inline-flex items-center gap-2">
-                          <span className="h-4 w-4 rounded-full border-2 border-rose-100/40 border-t-rose-100 animate-spin" />
-                          Deleting...
-                        </span>
+                        'Deleting...'
                       ) : (
                         'Delete Project'
                       )}

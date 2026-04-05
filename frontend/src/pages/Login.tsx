@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import BackendSleepNotice from '@/components/common/BackendSleepNotice'
+import Brand from '@/components/common/Brand'
 
 export function Login() {
   const navigate = useNavigate()
@@ -33,10 +34,13 @@ export function Login() {
         <div className="bg-legal-slate rounded-lg shadow-2xl p-8 border border-legal-blue border-opacity-30">
           {/* Header */}
           <div className="text-center mb-8">
-            <div className="text-5xl font-bold bg-gradient-to-r from-legal-accent to-legal-gold bg-clip-text text-transparent mb-2">
-              ⚖️
+            <div className="mb-2 flex justify-center">
+              <Brand
+                stacked
+                sizeClassName="h-14 w-14"
+                textClassName="text-3xl font-bold text-gray-100"
+              />
             </div>
-            <h1 className="text-3xl font-bold text-gray-100 mb-1">Vettly</h1>
             <p className="text-sm text-gray-400">Tender Compliance Validator</p>
           </div>
 

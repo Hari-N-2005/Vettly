@@ -37,10 +37,7 @@ export default function RecentProjectsList({
 
   return (
     <div>
-      <h2 className="mb-6 flex items-center gap-2 text-2xl font-bold text-gray-100">
-        <span className="h-2.5 w-2.5 rounded-full bg-indigo-300" />
-        Recent Projects
-      </h2>
+      <h2 className="mb-6 text-2xl font-bold text-gray-100">Recent Projects</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {projects.map(project => (
           <ProjectCard
