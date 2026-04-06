@@ -1,64 +1,85 @@
-# Vettly
+# Vettly - Tender Compliance Intelligence Platform
 
-Vettly is a tender compliance assistant for procurement and bid-evaluation teams.
+## Project Title
+Vettly - Tender Compliance Intelligence Platform
 
-It helps you move from long, hard-to-read RFP files to a structured review flow where requirements, compliance checks, and risks can be tracked clearly.
+## The Problem
+Procurement teams often review large RFP documents and multiple vendor proposals manually, which is slow and inconsistent. Important compliance gaps can be missed when requirements are not structured and compared side by side. Teams need a faster, traceable way to extract requirements, validate vendors, and surface risks before decision-making.
 
-## What This Project Does
+## The Solution
+Vettly provides a full tender-review workflow from RFP upload to vendor comparison and risk analysis. The platform extracts and structures requirements, stores project workspaces, validates vendor submissions against requirement checkpoints, and highlights compliance status (met, partially met, missing) with risk signals. It also centralizes project context so teams can review requirements, vendor performance, and risk indicators in one interface.
 
-Vettly is designed to support these outcomes:
+## Tech Stack
+- Programming Languages
+	- TypeScript
+	- JavaScript (tooling/runtime)
+- Frontend
+	- React 18
+	- Vite
+	- Tailwind CSS
+	- React Router
+	- Zustand
+	- TanStack React Query
+- Backend
+	- Node.js
+	- Express
+	- Prisma ORM
+	- JWT authentication
+	- Multer + pdf-parse + mammoth (document handling)
+- Database
+	- PostgreSQL
+- APIs and Third-Party Tools
+	- Google Gemini API (used for requirement extraction, semantic matching, and risk scanning)
+	- Core third-party libraries in use include Prisma, jsonwebtoken, multer, pdf-parse, and mammoth.
 
-- Collect RFP documents in one place
-- Extract readable text from uploaded RFP PDFs
-- Prepare requirement-by-requirement evaluation workflows
-- Compare vendor responses against tender expectations
-- Surface potential risks early for faster decisions
+## Setup Instructions
+Use these local setup steps (Docker not required).
 
-## Who It Is For
+### 1. Clone and enter project
+```bash
+git clone <your-repo-url>
+cd Vettly
+```
 
-- Procurement teams managing multiple bids
-- Legal/commercial reviewers validating contractual alignment
-- PMO and leadership teams that need transparent vendor comparison
+### 2. Install backend dependencies
+```bash
+cd backend
+npm install
+```
 
-## How To Use Vettly
+### 3. Configure backend environment
+Create `backend/.env.local` and add at least:
+```env
+DATABASE_URL="postgresql://<user>:<password>@localhost:5432/<db_name>"
+JWT_SECRET="your-strong-secret"
+PORT=3000
+CORS_ORIGIN="http://localhost:5173"
+```
 
-Use Vettly as an operating workflow rather than a single upload tool.
+### 4. Run database migrations (backend)
+```bash
+npm run prisma:migrate
+```
 
-1. Create or open a tender review
-2. Enter a clear project name
-3. Upload the RFP file
-4. Review extracted content for completeness
-5. Use the extracted content as the baseline for compliance checks
-6. Continue with proposal review, risk checks, and comparison views
+### 5. Install frontend dependencies
+```bash
+cd ../frontend
+npm install
+```
 
-## Current Working Flow
+### 6. Run the app locally (two terminals)
+Terminal A (backend):
+```bash
+cd backend
+npm run dev
+```
 
-At the current stage, the most complete flow is the RFP intake path.
+Terminal B (frontend):
+```bash
+cd frontend
+npm run dev
+```
 
-- The main page allows users to start a new tender review and upload an RFP
-- The backend provides an RFP upload endpoint that accepts PDF files
-- Uploaded PDF content is parsed and returned as structured response data
-
-This enables a reliable first step in the larger tender-compliance lifecycle.
-
-## Expected Upload Behavior
-
-When uploading an RFP PDF:
-
-- Non-PDF files are rejected
-- Empty or non-extractable PDFs are rejected
-- Oversized files are rejected
-- Valid PDFs return filename, extracted text, page count, and upload timestamp
-
-## Practical Usage Tips
-
-- Use clear project names so reviews remain searchable
-- Prefer text-based PDFs for best extraction quality
-- Keep source documents clean and final before upload
-- Use extracted output as the reference point for all later validation work
-
-## Product Direction
-
-Vettly is being delivered in phases, with RFP ingestion completed first and the remaining tender-validation experience expanding step by step.
-
-The end goal is a single review workspace from RFP intake to final vendor decision.
+### 7. Open the app
+- Frontend: `http://localhost:5173`
+- Backend API: `http://localhost:3000`

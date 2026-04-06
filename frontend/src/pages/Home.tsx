@@ -1309,16 +1309,6 @@ export default function Home() {
                       </div>
                     )}
 
-                    {currentProject && selectedComparisonVendorIds.length === 0 && savedVendors.length > 0 && (
-                      <div className="mt-6">
-                        <EmptyState
-                          variant="vendors"
-                          title="No vendors selected for comparison"
-                          description="Use the 'Use For Comparison' button in a vendor panel to load the comparison table."
-                        />
-                      </div>
-                    )}
-
                     {riskScanResult && (
                       <div className="mt-6">
                         <RiskHeatmap vendors={riskHeatmapVendors} riskMatrix={riskHeatmapMatrix} />
