@@ -1,8 +1,5 @@
 # Vettly - Tender Compliance Intelligence Platform
 
-## Project Title
-Vettly - Tender Compliance Intelligence Platform
-
 ## The Problem
 Procurement teams often review large RFP documents and multiple vendor proposals manually, which is slow and inconsistent. Important compliance gaps can be missed when requirements are not structured and compared side by side. Teams need a faster, traceable way to extract requirements, validate vendors, and surface risks before decision-making.
 
