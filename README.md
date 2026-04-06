@@ -34,7 +34,7 @@ Use these local setup steps (Docker not required).
 
 ### 1. Clone and enter project
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Hari-N-2005/Vettly
 cd Vettly
 ```
 
