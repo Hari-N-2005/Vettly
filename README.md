@@ -1,8 +1,5 @@
 # Vettly - Tender Compliance Intelligence Platform
 
-## Project Title
-Vettly - Tender Compliance Intelligence Platform
-
 ## The Problem
 Procurement teams often review large RFP documents and multiple vendor proposals manually, which is slow and inconsistent. Important compliance gaps can be missed when requirements are not structured and compared side by side. Teams need a faster, traceable way to extract requirements, validate vendors, and surface risks before decision-making.
 
@@ -37,7 +34,7 @@ Use these local setup steps (Docker not required).
 
 ### 1. Clone and enter project
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Hari-N-2005/Vettly
 cd Vettly
 ```
 
