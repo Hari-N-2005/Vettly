@@ -100,13 +100,6 @@ export function Login() {
               </Link>
             </p>
           </div>
-
-          {/* Demo credentials */}
-          <div className="mt-6 p-4 bg-legal-dark border border-legal-blue border-opacity-50 rounded-lg">
-            <p className="text-xs font-semibold text-legal-gold mb-2">Demo Account:</p>
-            <p className="text-xs text-gray-300">Email: demo@vettly.com</p>
-            <p className="text-xs text-gray-300">Password: demo@123</p>
-          </div>
         </div>
       </div>
 

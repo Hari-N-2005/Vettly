@@ -188,11 +188,7 @@ export default function Home() {
   }, [confirmedRequirements])
 
   const toggleComparisonVendor = (proposalId: string) => {
-    setSelectedComparisonVendorIds(prev =>
-      prev.includes(proposalId)
-        ? prev.filter(id => id !== proposalId)
-        : [...prev, proposalId]
-    )
+    setSelectedComparisonVendorIds(prev => (prev[0] === proposalId ? [] : [proposalId]))
   }
 
   const buildCategoryStatuses = (resultsByRequirement: Map<string, any>) => {
@@ -1240,8 +1236,8 @@ export default function Home() {
                                         }`}
                                       >
                                         {selectedComparisonVendorIds.includes(proposal.id)
-                                          ? 'Added To Comparison'
-                                          : 'Use For Comparison'}
+                                          ? 'Hide Details'
+                                          : 'Show Details'}
                                       </button>
                                       <button
                                         type="button"

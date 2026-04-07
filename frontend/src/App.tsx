@@ -20,6 +20,15 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-legal-dark">
         <div className="text-center">
+          <svg
+            className="mx-auto mb-4 h-10 w-10 animate-spin text-legal-accent"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+            <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+          </svg>
           <p className="text-gray-400">Loading...</p>
         </div>
         <BackendSleepNotice isActive />
@@ -41,6 +50,15 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-legal-dark">
         <div className="text-center">
+          <svg
+            className="mx-auto mb-4 h-10 w-10 animate-spin text-legal-accent"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+            <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+          </svg>
           <p className="text-gray-400">Loading...</p>
         </div>
         <BackendSleepNotice isActive />
@@ -70,6 +88,15 @@ function App() {
     return (
       <div className="flex items-center justify-center min-h-screen bg-legal-dark">
         <div className="text-center">
+          <svg
+            className="mx-auto mb-4 h-10 w-10 animate-spin text-legal-accent"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+            <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+          </svg>
           <p className="text-gray-400">Loading...</p>
         </div>
         <BackendSleepNotice isActive />
