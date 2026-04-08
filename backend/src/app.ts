@@ -1828,7 +1828,33 @@ const upload = multer({
 
 // Middleware
 app.use(helmet())
-app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }))
+const configuredCorsOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean)
+
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    // Allow same-origin, curl, and server-to-server requests with no Origin header.
+    if (!origin) {
+      callback(null, true)
+      return
+    }
+
+    const isConfiguredOrigin = configuredCorsOrigins.includes(origin)
+    const isKnownVercelDeployment = /^https:\/\/vettly(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(origin)
+
+    if (isConfiguredOrigin || isKnownVercelDeployment) {
+      callback(null, true)
+      return
+    }
+
+    callback(new Error(`CORS blocked for origin: ${origin}`))
+  },
+}
+
+app.use(cors(corsOptions))
+app.options('*', cors(corsOptions))
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ limit: '50mb', extended: true }))
 app.use('/reports', express.static(reportsDirectoryPath))
